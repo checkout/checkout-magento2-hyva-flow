@@ -1,0 +1,50 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
+
+/** @var Template $block */
+/** @var Escaper $escaper */
+?>
+<div class="flex flex-col gap-8">
+    <div class="space-y-6">
+        <?= $block->getChildHtml('checkoutcom_paypal_review_shipping_method') ?>
+        <?= $block->getChildHtml('checkoutcom_paypal_review_payment_method') ?>
+    </div>
+    <div class="card p-6 border border-slate-200 rounded-lg">
+        <?= $block->getChildHtml('checkoutcom_paypal_review_shipping_address') ?>
+    </div>
+
+    <div class="card py-2 px-6 md:w-1/2">
+        <?= $block->getChildHtml('checkoutcom_paypal.additional.actions') ?>
+    </div>
+
+    <div class="mt-8 space-y-6">
+        <div class="flex flex-wrap gap-4 justify-between items-center">
+            <h2 class="text-xl font-semibold">
+                <?= $escaper->escapeHtml(__('Items in Your Shopping Cart')) ?>
+            </h2>
+            <a href="<?= $escaper->escapeUrl($block->getUrl('checkout/cart')) ?>"
+               class="btn btn-secondary text-sm">
+                <?= $escaper->escapeHtml(__('Edit Shopping Cart')) ?>
+            </a>
+        </div>
+
+        <?= $block->getChildHtml('details') ?>
+        <?= $block->getChildHtml('checkoutcom_paypal_review_place_order') ?>
+    </div>
+</div>

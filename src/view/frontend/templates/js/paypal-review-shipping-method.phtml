@@ -1,0 +1,151 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
+
+/** @var HyvaCsp $hyvaCsp */
+/** @var Escaper $escaper */
+?>
+<script>
+(function () {
+    'use strict';
+
+    /**
+     * Alpine component factory for the PayPal review shipping method selector.
+     *
+     * @return {Object} Alpine component data and methods.
+     */
+    function paypalReviewShippingMethod() {
+        return {
+            saving: false,
+            currentMethod: '',
+            saveUrl: '',
+            refreshSelectors: [
+                '#checkoutcom-paypal-shipping-methods',
+                '#details-reload',
+                '#checkoutcom_paypal_place_order',
+            ],
+            messages: {
+                saveFailed: '<?= $escaper->escapeJs(__('Unable to update the shipping method. Please try again.')) ?>',
+            },
+
+            /**
+             * Initialises component state from the root element's data attributes.
+             */
+            init() {
+                this.currentMethod = this.$el.dataset.currentMethod || '';
+                this.saveUrl = this.$el.dataset.saveUrl || '';
+            },
+
+            /**
+             * Checks whether the given method code matches the currently selected method.
+             *
+             * @param {string} methodCode Shipping method code to test.
+             * @return {boolean} True if the method is currently selected.
+             */
+            isSelected(methodCode) {
+                return this.currentMethod === methodCode;
+            },
+
+            /**
+             * Saves the selected shipping method via an AJAX request and refreshes page fragments.
+             *
+             * @param {string} methodCode Shipping method code to select.
+             */
+            async selectMethod(methodCode) {
+                if (this.saving || !methodCode || this.isSelected(methodCode) || !this.saveUrl) {
+                    return;
+                }
+
+                this.saving = true;
+
+                try {
+                    const url = new URL(this.saveUrl, window.location.origin);
+                    url.searchParams.set('method_code', methodCode);
+
+                    const response = await fetch(url.toString(), {
+                        method: 'GET',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        credentials: 'same-origin',
+                        redirect: 'follow',
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Shipping method save failed with status ' + response.status);
+                    }
+
+                    const html = await response.text();
+                    this.refreshPageFragments(html);
+                    this.currentMethod = methodCode;
+
+                    window.dispatchEvent(new CustomEvent('reload-customer-section-data'));
+                } catch (error) {
+                    console.error('[Checkout.com PayPal] Shipping method update failed', error);
+                    this.notifyError(this.messages.saveFailed);
+                } finally {
+                    this.saving = false;
+                }
+            },
+
+            /**
+             * Replaces DOM fragments defined in refreshSelectors with their counterparts from the given HTML string.
+             *
+             * @param {string} html Full HTML string returned by the save endpoint.
+             */
+            refreshPageFragments(html) {
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+
+                this.refreshSelectors.forEach((selector) => {
+                    const next = doc.querySelector(selector);
+                    const current = document.querySelector(selector);
+
+                    if (!next || !current) {
+                        return;
+                    }
+
+                    current.replaceWith(next);
+
+                    if (typeof Alpine !== 'undefined' && typeof Alpine.initTree === 'function') {
+                        Alpine.initTree(next);
+                    }
+                });
+            },
+
+            /**
+             * Dispatches an error message via the Hyva messages dispatcher or falls back to a native alert.
+             *
+             * @param {string} message Error message to display.
+             */
+            notifyError(message) {
+                if (typeof window.dispatchMessages === 'function') {
+                    window.dispatchMessages([{ type: 'error', text: message }]);
+                    return;
+                }
+
+                window.alert(message);
+            },
+        };
+    }
+
+    window.addEventListener('alpine:init', () => {
+        Alpine.data('paypalReviewShippingMethod', paypalReviewShippingMethod);
+    }, { once: true });
+})();
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>

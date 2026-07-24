@@ -1,0 +1,56 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Magento\Checkout\Helper\Data as CheckoutHelper;
+use Magento\Framework\Escaper;
+use Magento\Tax\Block\Checkout\Subtotal;
+
+/** @var Subtotal $block */
+/** @var Escaper $escaper */
+
+$colspan = (int) $block->getColspan();
+/** @var CheckoutHelper $checkoutHelper */
+$checkoutHelper = $block->getData('checkoutHelper');
+$markCellClass = 'py-2 pe-4 text-left font-normal text-fg-secondary align-top';
+$amountCellClass = 'py-2 text-right font-medium align-top';
+?>
+<?php if ($block->displayBoth()): ?>
+    <tr class="border-t border-slate-100">
+        <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">
+            <?= $escaper->escapeHtml(__('Subtotal (Excl. Tax)')) ?>
+        </th>
+        <td class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?>" data-th="<?= $escaper->escapeHtmlAttr(__('Subtotal (Excl. Tax)')) ?>">
+            <?= /* @noEscape */ $checkoutHelper->formatPrice($block->getTotal()->getValueExclTax()) ?>
+        </td>
+    </tr>
+    <tr class="border-t border-slate-100">
+        <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">
+            <?= $escaper->escapeHtml(__('Subtotal (Incl. Tax)')) ?>
+        </th>
+        <td class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?>" data-th="<?= $escaper->escapeHtmlAttr(__('Subtotal (Incl. Tax)')) ?>">
+            <?= /* @noEscape */ $checkoutHelper->formatPrice($block->getTotal()->getValueInclTax()) ?>
+        </td>
+    </tr>
+<?php else: ?>
+    <tr class="border-t border-slate-100">
+        <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">
+            <?= $escaper->escapeHtml($block->getTotal()->getTitle()) ?>
+        </th>
+        <td class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?>" data-th="<?= $escaper->escapeHtmlAttr($block->getTotal()->getTitle()) ?>">
+            <?= /* @noEscape */ $checkoutHelper->formatPrice($block->getTotal()->getValue()) ?>
+        </td>
+    </tr>
+<?php endif; ?>

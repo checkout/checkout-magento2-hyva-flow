@@ -1,0 +1,39 @@
+/**
+ * Checkout.com Magento 2 Hyvä — Tailwind v4 content sources.
+ *
+ * Picked up by `npx hyva-sources` when the module is listed in app/etc/hyva-themes.json
+ * (auto-registered via CompatModuleRegistry + bin/magento hyva:config:generate).
+ */
+
+@source "../templates/**/*.phtml";
+@source "../layout/**/*.xml";
+
+@layer components {
+    .checkoutcom-paypal-express__container {
+        border-radius: var(--radius-lg);
+    }
+
+    .checkoutcom-applepay-express__button {
+        -webkit-appearance: -apple-pay-button;
+        -apple-pay-button-style: black;
+        -apple-pay-button-type: pay;
+    }
+
+    .checkoutcom-applepay-express__button--white {
+        -apple-pay-button-style: white;
+    }
+
+    .checkoutcom-applepay-express__button--white-outline {
+        -apple-pay-button-style: white-outline;
+    }
+}
+
+.checkoutcom-paypal-review {
+    .form-address-edit {
+        .actions-toolbar {
+            .secondary {
+                @apply hidden;
+            }
+        }
+    }
+}

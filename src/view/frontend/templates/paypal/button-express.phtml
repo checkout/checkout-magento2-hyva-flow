@@ -1,0 +1,68 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2Hyva\ViewModel\PaypalConfig;
+use Hyva\Theme\Model\ViewModelRegistry;
+use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
+
+/** @var Template $block */
+/** @var Escaper $escaper */
+/** @var ViewModelRegistry $viewModels */
+
+$paypalConfigViewModel = $viewModels->require(PaypalConfig::class);
+$paypalContext = (string) $block->getData('paypal_context');
+
+if (!$paypalConfigViewModel->isEnabled() || !$paypalConfigViewModel->isButtonEnabledForContext($paypalContext)) {
+    return;
+}
+
+$isMinicart = $paypalContext === PaypalConfig::CONTEXT_EXPRESS_MINICART;
+$componentId = ($isMinicart ? 'checkoutcom-paypal-minicart-' : 'checkoutcom-paypal-cart-') . uniqid();
+$allowedCurrencies = $paypalConfigViewModel->getAllowedCurrencies();
+$paypalSectionConfig = $paypalConfigViewModel->getPaypalSectionConfig();
+$paypalSdkConfig = $paypalConfigViewModel->getPaypalSdkWindowConfig($paypalContext);
+$buttonClasses = $isMinicart
+    ? 'checkoutcom-paypal-express checkoutcom-paypal-express--minicart w-full'
+    : 'checkoutcom-paypal-express__button w-full';
+?>
+<?php if (!$isMinicart): ?>
+<div class="checkoutcom-paypal-express w-full">
+<?php endif; ?>
+    <div
+        id="<?= $escaper->escapeHtmlAttr($componentId) ?>"
+        class="<?= $escaper->escapeHtmlAttr($buttonClasses) ?>"
+        x-data="initPaypalButton"
+        x-bind="paypalButtonListeners"
+        data-context="<?= $escaper->escapeHtmlAttr($paypalContext) ?>"
+        data-context-url="<?= $escaper->escapeUrl($paypalConfigViewModel->getContextUrl()) ?>"
+        data-review-url="<?= $escaper->escapeUrl($paypalConfigViewModel->getReviewUrl()) ?>"
+        data-public-key="<?= $escaper->escapeHtmlAttr($paypalConfigViewModel->getPublicKey()) ?>"
+        data-environment="<?= $escaper->escapeHtmlAttr($paypalConfigViewModel->getEnvironment()) ?>"
+        data-allowed-currencies="<?= $escaper->escapeHtmlAttr(json_encode($allowedCurrencies)) ?>"
+        data-paypal-config="<?= $escaper->escapeHtmlAttr(json_encode($paypalSectionConfig)) ?>"
+        data-paypal-sdk-config="<?= $escaper->escapeHtmlAttr(json_encode($paypalSdkConfig)) ?>"
+        data-quote-currency="<?= $escaper->escapeHtmlAttr($paypalConfigViewModel->getQuoteCurrencyCode()) ?>"
+        :class="{ 'hidden': !visible }"
+    >
+        <div
+            class="checkoutcom-paypal-express__container w-full h-11 overflow-hidden rounded-lg"
+            x-ref="paypalContainer"
+        ></div>
+    </div>
+<?php if (!$isMinicart): ?>
+</div>
+<?php endif; ?>

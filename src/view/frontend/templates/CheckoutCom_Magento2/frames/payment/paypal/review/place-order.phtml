@@ -1,0 +1,52 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2\Block\Paypal\Review\PlaceOrderButton;
+use Magento\Framework\Escaper;
+
+/** @var PlaceOrderButton $block */
+/** @var Escaper $escaper */
+
+$contextId = $block->getContextId();
+$paymentMethod = $block->getPaymentMethod();
+$canPlaceOrder = $block->canPlaceOrder();
+$placeOrderUrl = $block->getUrl('checkout_com/payment/placeorder');
+$successUrl = $block->getUrl('checkout/onepage/success');
+?>
+<?= $block->getChildHtml('checkoutcom.hyva.paypal.review.placeorder.js') ?>
+<div class="mt-8"
+     x-data="paypalReviewPlaceOrder"
+     data-context-id="<?= $escaper->escapeHtmlAttr($contextId) ?>"
+     data-method-id="<?= $escaper->escapeHtmlAttr($paymentMethod) ?>"
+     data-place-order-url="<?= $escaper->escapeUrl($placeOrderUrl) ?>"
+     data-success-url="<?= $escaper->escapeUrl($successUrl) ?>"
+     data-can-place-order="<?= $canPlaceOrder ? '1' : '0' ?>">
+    <?= $block->getChildHtml('agreements') ?>
+
+    <div class="md:flex md:gap-4 md:justify-end">
+        <button type="button"
+                class="btn btn-primary w-full md:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="!canSubmit || placing"
+                @click="submit">
+            <span x-show="!placing" x-cloak><?= $escaper->escapeHtml(__('Place Order')) ?></span>
+            <span x-show="placing" x-cloak class="flex items-center gap-2">
+                <span class="inline-block w-4 h-4 border-2 border-current border-r-transparent rounded-full animate-spin"
+                      aria-hidden="true"></span>
+                <?= $escaper->escapeHtml(__('Submitting order information...')) ?>
+            </span>
+        </button>
+    </div>
+</div>

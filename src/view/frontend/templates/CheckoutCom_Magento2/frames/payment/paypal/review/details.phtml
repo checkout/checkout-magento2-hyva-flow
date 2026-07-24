@@ -1,0 +1,44 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Magento\Checkout\Block\Cart\Totals;
+use Magento\Framework\Escaper;
+
+/** @var Totals $block */
+/** @var Escaper $escaper */
+$thClass = 'py-3 pe-4 font-semibold';
+?>
+<div id="details-reload" class="overflow-x-auto">
+    <table id="details-table" class="w-full text-sm border-collapse">
+        <caption class="sr-only">
+            <?= $escaper->escapeHtml(__('Items in Your Shopping Cart')) ?>
+        </caption>
+        <thead>
+        <tr class="border-b border-slate-200 text-left">
+            <th class="<?= $escaper->escapeHtmlAttr($thClass) ?>" scope="col"><?= $escaper->escapeHtml(__('Item')) ?></th>
+            <th class="<?= $escaper->escapeHtmlAttr($thClass) ?>" scope="col"><?= $escaper->escapeHtml(__('Price')) ?></th>
+            <th class="<?= $escaper->escapeHtmlAttr($thClass) ?>" scope="col"><?= $escaper->escapeHtml(__('Qty')) ?></th>
+            <th class="py-3 font-semibold text-right" scope="col"><?= $escaper->escapeHtml(__('Subtotal')) ?></th>
+        </tr>
+        </thead>
+        <?php foreach ($block->getItems() as $item): ?>
+            <?= /* @noEscape */ $block->getItemHtml($item) ?>
+        <?php endforeach; ?>
+        <tfoot>
+        <?= /* @noEscape */ $block->getChildHtml('totals') ?>
+        </tfoot>
+    </table>
+</div>

@@ -1,0 +1,189 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2\Block\Account\AddCard;
+use Hyva\Theme\Model\ViewModelRegistry;
+use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
+
+/** @var AddCard $block */
+/** @var Escaper $escaper */
+/** @var ViewModelRegistry $viewModels */
+/** @var HyvaCsp $hyvaCsp */
+$hyvaCsp = $viewModels->require(HyvaCsp::class);
+
+$publicKey = (string)$block->getConfig()->getValue('public_key');
+$rtlEnabled = (bool)$block->getConfig()->getValue('enable_right_to_left', 'checkoutcom_card_payment');
+$saveCardUrl = (string)$block->getUrl('checkout_com/account/savecard');
+$listUrl = (string)$block->getUrl('vault/cards/listaction');
+?>
+<div class="cko-add-card mt-6" x-data="checkoutcomAddCard">
+    <button
+        type="button"
+        class="btn btn-primary"
+        x-show="addButtonVisible"
+        x-cloak
+        @click="showForm"
+    >
+        <?= $escaper->escapeHtml(__('Add a card')) ?>
+    </button>
+
+    <div x-show="formVisible" x-cloak class="mt-4 space-y-4">
+        <form class="max-w-lg" method="POST">
+            <div class="card-frame h-10 mb-3 rounded border"></div>
+            <div class="scheme-choice-frame"></div>
+            <input type="hidden" id="cko-add-card-token" name="cardToken" />
+        </form>
+
+        <p x-show="errorMessage" x-cloak class="text-red-700 text-sm" x-text="errorMessage"></p>
+
+        <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="saveDisabled"
+            @click="submit"
+        >
+            <?= $escaper->escapeHtml(__('Save the card')) ?>
+        </button>
+    </div>
+</div>
+
+<script>
+    (() => {
+        const PUBLIC_KEY = <?= /* @noEscape */ json_encode($publicKey) ?>;
+        const SAVE_URL = <?= /* @noEscape */ json_encode($saveCardUrl) ?>;
+        const LIST_URL = <?= /* @noEscape */ json_encode($listUrl) ?>;
+        const RTL = <?= /* @noEscape */ json_encode($rtlEnabled) ?>;
+        const SDK_SRC = 'https://cdn.checkout.com/js/framesv2.min.js';
+        const ERROR_GENERIC = <?= /* @noEscape */ json_encode((string) __('The card could not be saved. Please try again.')) ?>;
+        const ERROR_SDK = <?= /* @noEscape */ json_encode((string) __('Card form is currently unavailable. Please try again later.')) ?>;
+
+        const loadFrames = () => new Promise((resolve, reject) => {
+            if (typeof window.Frames !== 'undefined') {
+                resolve(window.Frames);
+                return;
+            }
+            const existing = document.querySelector('script[data-cko-frames-sdk="1"]');
+            if (existing) {
+                existing.addEventListener('load', () => resolve(window.Frames));
+                existing.addEventListener('error', () => reject(new Error('Frames SDK failed to load')));
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = SDK_SRC;
+            script.async = true;
+            script.dataset.ckoFramesSdk = '1';
+            script.onload = () => resolve(window.Frames);
+            script.onerror = () => reject(new Error('Frames SDK failed to load'));
+            document.head.appendChild(script);
+        });
+
+        document.addEventListener('alpine:init', () => {
+            if (!window.Alpine || typeof window.Alpine.data !== 'function') {
+                return;
+            }
+            window.Alpine.data('checkoutcomAddCard', () => ({
+                formVisible: false,
+                addButtonVisible: true,
+                saveDisabled: true,
+                saving: false,
+                errorMessage: '',
+                _initialized: false,
+                _cardToken: null,
+
+                showForm() {
+                    this.formVisible = true;
+                    this.addButtonVisible = false;
+                    this._init();
+                },
+
+                _init() {
+                    if (this._initialized) {
+                        return;
+                    }
+                    this._initialized = true;
+
+                    loadFrames()
+                        .then((Frames) => {
+                            const modes = [Frames.modes.FEATURE_FLAG_SCHEME_CHOICE];
+                            if (RTL) {
+                                modes.push(Frames.modes.RIGHT_TO_LEFT);
+                            }
+                            Frames.init({
+                                publicKey: PUBLIC_KEY,
+                                modes,
+                                schemeChoice: true,
+                                cardValidationChanged: () => {
+                                    if (Frames.isCardValid()) {
+                                        Frames.submitCard();
+                                    } else {
+                                        this.saveDisabled = true;
+                                    }
+                                },
+                                cardTokenized: (event) => {
+                                    this._cardToken = event.token;
+                                    const hidden = document.getElementById('cko-add-card-token');
+                                    if (hidden) {
+                                        hidden.value = event.token;
+                                    }
+                                    Frames.enableSubmitForm();
+                                    this.saveDisabled = false;
+                                },
+                            });
+                        })
+                        .catch(() => {
+                            this.errorMessage = ERROR_SDK;
+                        });
+                },
+
+                async submit() {
+                    if (!this._cardToken || this.saving) {
+                        return;
+                    }
+                    this.saving = true;
+                    this.saveDisabled = true;
+                    this.errorMessage = '';
+                    try {
+                        const body = new URLSearchParams();
+                        body.append('cardToken', this._cardToken);
+
+                        const resp = await fetch(SAVE_URL, {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            body: body.toString(),
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (data && data.success) {
+                            window.location.assign(data.url || LIST_URL);
+                            return;
+                        }
+                        this.errorMessage = (data && data.message) || ERROR_GENERIC;
+                    } catch (e) {
+                        this.errorMessage = ERROR_GENERIC;
+                    } finally {
+                        this.saving = false;
+                        this.saveDisabled = !this._cardToken;
+                    }
+                }
+            }));
+        });
+    })();
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>

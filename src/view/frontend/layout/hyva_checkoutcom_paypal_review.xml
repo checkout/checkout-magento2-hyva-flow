@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" layout="checkout"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <update handle="hyva_form_validation"/>
+    <body>
+        <referenceBlock name="checkoutcom_paypal_express_review_checkout_head_components" remove="true"/>
+        <referenceBlock name="checkoutcom_paypal_express_review.checkout.config" remove="true"/>
+        
+        <referenceBlock name="checkoutcom_paypal.cart.coupon"
+                        template="Magento_Checkout::php-cart/coupon.phtml"/>
+        <referenceBlock name="checkoutcom_paypal.express.review.details.agreements"
+                        template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/agreements.phtml"/>
+        <referenceBlock name="checkoutcom_paypal_review_shipping_method">
+            <block name="checkoutcom.hyva.paypal.review.shipping.js"
+                   template="CheckoutCom_Magento2Hyva::js/paypal-review-shipping-method.phtml"/>
+        </referenceBlock>
+        <referenceBlock name="checkoutcom_paypal_review_place_order">
+            <block name="checkoutcom.hyva.paypal.review.placeorder.js"
+                   template="CheckoutCom_Magento2Hyva::js/paypal-review-place-order.phtml"/>
+        </referenceBlock>
+        <referenceBlock name="checkoutcom_paypal_express.review.details.totals"
+                        template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/totals.phtml">
+            <block class="Magento\Tax\Block\Checkout\Subtotal"
+                   name="subtotal_total_renderer"
+                   template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/totals/subtotal.phtml"/>
+            <block class="Magento\Tax\Block\Checkout\Shipping"
+                   name="shipping_total_renderer"
+                   template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/totals/shipping.phtml"/>
+            <block class="Magento\Tax\Block\Checkout\Tax"
+                   name="tax_total_renderer"
+                   template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/totals/tax.phtml"/>
+            <block class="Magento\Tax\Block\Checkout\Grandtotal"
+                   name="grand_total_total_renderer"
+                   template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/totals/grand-total.phtml"/>
+            <block class="Magento\Tax\Block\Checkout\Discount"
+                   name="discount_total_renderer"
+                   template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/totals/default.phtml"/>
+        </referenceBlock>
+        <referenceBlock name="checkout.onepage.review.item.renderers">
+            <block class="Magento\Checkout\Block\Cart\Item\Renderer"
+                   name="checkout.onepage.review.item.renderers.default"
+                   as="default"
+                   template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/item.phtml"/>
+            <block class="Magento\Checkout\Block\Cart\Item\Renderer"
+                   name="checkout.onepage.review.item.renderers.simple"
+                   as="simple"
+                   template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/item.phtml"/>
+            <block class="Magento\ConfigurableProduct\Block\Cart\Item\Renderer\Configurable"
+                   name="checkout.onepage.review.item.renderers.configurable"
+                   as="configurable"
+                   template="CheckoutCom_Magento2Hyva::CheckoutCom_Magento2/frames/payment/paypal/review/item.phtml"
+                   cacheable="false"/>
+        </referenceBlock>
+    </body>
+</page>

@@ -1,0 +1,53 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2Hyva\ViewModel\DebugConfig;
+use Hyva\Theme\Model\ViewModelRegistry;
+use Hyva\Theme\ViewModel\HyvaCsp;
+
+/** @var HyvaCsp $hyvaCsp */
+/** @var ViewModelRegistry $viewModels */
+
+$debugConfig = $viewModels->require(DebugConfig::class);
+?>
+<script>
+(function () {
+    'use strict';
+    window.ckoHyva = window.ckoHyva || {};
+    window.ckoHyva.debug = <?= /* @noEscape */ $debugConfig->isDebugEnabled() ? 'true' : 'false' ?>;
+
+    /**
+     * Build a prefixed logger that only writes to the console when debug mode is on.
+     *
+     * @param {string} prefix Label prepended to every logged message.
+     * @return {function(...*): void} The logger function.
+     */
+    window.ckoHyva.createLogger = function (prefix) {
+        /**
+         * Log the given arguments to the console when debug mode is enabled.
+         *
+         * @param {...*} args Values to log.
+         * @return {void}
+         */
+        return function (...args) {
+            if (window.ckoHyva.debug) {
+                console.log(prefix, ...args);
+            }
+        };
+    };
+})();
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>

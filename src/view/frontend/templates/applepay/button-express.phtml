@@ -1,0 +1,73 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2Hyva\ViewModel\ApplePayConfig;
+use Hyva\Theme\Model\ViewModelRegistry;
+use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
+
+/** @var Template $block */
+/** @var Escaper $escaper */
+/** @var ViewModelRegistry $viewModels */
+
+$applePayConfigViewModel = $viewModels->require(ApplePayConfig::class);
+$applePayContext = (string)$block->getData('applepay_context');
+
+if (!$applePayConfigViewModel->isEnabled() || !$applePayConfigViewModel->isButtonEnabledForContext($applePayContext)) {
+    return;
+}
+
+$isMinicart = $applePayContext === ApplePayConfig::CONTEXT_EXPRESS_MINICART;
+$componentId = ($isMinicart ? 'checkoutcom-applepay-minicart-' : 'checkoutcom-applepay-cart-') . uniqid();
+
+$buttonStyle = $applePayConfigViewModel->getButtonStyle();
+$buttonStyleClass = match ($buttonStyle) {
+    'white' => 'checkoutcom-applepay-express__button--white',
+    'white-with-line' => 'checkoutcom-applepay-express__button--white-outline',
+    default => '',
+};
+
+$wrapperClasses = $isMinicart
+    ? 'checkoutcom-applepay-express checkoutcom-applepay-express--minicart w-full'
+    : 'checkoutcom-applepay-express w-full';
+
+$applePaySectionConfig = $applePayConfigViewModel->getApplePaySectionConfig();
+?>
+<div
+    id="<?= $escaper->escapeHtmlAttr($componentId) ?>"
+    class="<?= $escaper->escapeHtmlAttr($wrapperClasses) ?>"
+    x-data="initApplePayButton"
+    x-bind="applePayButtonListeners"
+    data-context="<?= $escaper->escapeHtmlAttr($applePayContext) ?>"
+    data-method-id="<?= $escaper->escapeHtmlAttr($applePayConfigViewModel->getMethodId()) ?>"
+    data-validation-url="<?= $escaper->escapeUrl($applePayConfigViewModel->getValidationUrl()) ?>"
+    data-place-order-url="<?= $escaper->escapeUrl($applePayConfigViewModel->getPlaceOrderUrl()) ?>"
+    data-success-url="<?= $escaper->escapeUrl($applePayConfigViewModel->getSuccessUrl()) ?>"
+    data-rest-base-url="<?= $escaper->escapeUrl($applePayConfigViewModel->getRestApiBaseUrl()) ?>"
+    data-applepay-config="<?= $escaper->escapeHtmlAttr(json_encode($applePaySectionConfig)) ?>"
+    data-quote-currency="<?= $escaper->escapeHtmlAttr($applePayConfigViewModel->getCurrencyCode()) ?>"
+    x-show="visible"
+    x-cloak
+>
+    <button
+        type="button"
+        class="checkoutcom-applepay-express__button <?= $escaper->escapeHtmlAttr($buttonStyleClass) ?> block w-full h-11 rounded-lg cursor-pointer"
+        @click.prevent="onClick"
+        :disabled="processing"
+        :aria-busy="processing"
+        aria-label="<?= $escaper->escapeHtmlAttr(__('Pay with Apple Pay')) ?>"
+    ></button>
+</div>

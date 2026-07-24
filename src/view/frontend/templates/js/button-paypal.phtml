@@ -1,0 +1,635 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2Hyva\ViewModel\PaypalConfig;
+use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
+
+/** @var HyvaCsp $hyvaCsp */
+/** @var Escaper $escaper */
+?>
+<script>
+(function () {
+    'use strict';
+
+    const log = window.ckoHyva?.createLogger('[CKO PayPal]') ?? (() => {});
+
+    const PAYPAL_SCRIPT_URL = 'https://www.paypal.com/sdk/js';
+
+    /**
+     * Builds the PayPal SDK script URL with the required query parameters.
+     *
+     * @param {object} paypalConfig  PayPal configuration containing client-id and merchant-id.
+     * @param {object} windowConfig  Window-level configuration for intent and commit flag.
+     * @param {string} currency      Quote currency code to append to the URL.
+     * @return {string} Full PayPal SDK script URL with query parameters.
+     */
+    function buildPaypalSdkScriptUrl(paypalConfig, windowConfig, currency) {
+        const scriptUrl = new URL(PAYPAL_SCRIPT_URL);
+
+        scriptUrl.searchParams.append('client-id', paypalConfig.checkout_client_id);
+        scriptUrl.searchParams.append('merchant-id', paypalConfig.merchant_id);
+        scriptUrl.searchParams.append('intent', windowConfig.intent || 'capture');
+        scriptUrl.searchParams.append('commit', windowConfig.commit || 'false');
+
+        if (currency) {
+            scriptUrl.searchParams.append('currency', currency);
+        }
+
+        scriptUrl.searchParams.append('disable-funding', 'credit,card,sepa');
+
+        return scriptUrl.toString();
+    }
+
+    /**
+     * Loads the PayPal SDK script into the page, deduplicating concurrent requests.
+     *
+     * @param {string} scriptSrc     URL of the PayPal SDK script to load.
+     * @param {object} scriptDataset Optional dataset attributes to set on the script element.
+     * @return {Promise<void>} Promise that resolves when the SDK is ready.
+     */
+    function loadCkoPaypalSdk(scriptSrc, scriptDataset = {}) {
+        if (typeof paypal !== 'undefined') {
+            return Promise.resolve();
+        }
+
+        window.__ckoPaypalSdkPromises = window.__ckoPaypalSdkPromises || Object.create(null);
+
+        if (!window.__ckoPaypalSdkPromises[scriptSrc]) {
+            window.__ckoPaypalSdkPromises[scriptSrc] = new Promise((resolve, reject) => {
+                const existingScript = document.querySelector('script[src*="www.paypal.com/sdk/js"]');
+
+                if (existingScript) {
+                    if (typeof paypal !== 'undefined') {
+                        resolve();
+                        return;
+                    }
+
+                    existingScript.addEventListener('load', () => resolve(), { once: true });
+                    existingScript.addEventListener('error', () => {
+                        delete window.__ckoPaypalSdkPromises[scriptSrc];
+                        reject(new Error('PayPal SDK failed to load'));
+                    }, { once: true });
+
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.type = 'text/javascript';
+                script.src = scriptSrc;
+
+                if (scriptDataset.pageType) {
+                    script.dataset.pageType = scriptDataset.pageType;
+                }
+
+                if (scriptDataset.partnerAttributionId) {
+                    script.dataset.partnerAttributionId = scriptDataset.partnerAttributionId;
+                }
+
+                script.addEventListener('load', () => resolve(), { once: true });
+                script.addEventListener('error', () => {
+                    delete window.__ckoPaypalSdkPromises[scriptSrc];
+                    reject(new Error('PayPal SDK failed to load'));
+                }, { once: true });
+
+                document.head.appendChild(script);
+            });
+        }
+
+        window.__ckoPaypalSdkPromise = window.__ckoPaypalSdkPromises[scriptSrc];
+
+        return window.__ckoPaypalSdkPromise;
+    }
+
+    const PAYPAL_BUTTON_STYLE = {
+        layout: 'vertical',
+        color: 'gold',
+        shape: 'rect',
+        label: 'paypal',
+        height: 44,
+        borderRadius: 8,
+    };
+
+    /**
+     * Factory function that creates and returns the Alpine.js PayPal button component.
+     *
+     * @return {object} Alpine component data object with state and methods.
+     */
+    function initPaypalButton() {
+        const CONTEXT_EXPRESS_CART = <?= /* @noEscape */ json_encode(PaypalConfig::CONTEXT_EXPRESS_CART) ?>;
+        const CONTEXT_EXPRESS_MINICART = <?= /* @noEscape */ json_encode(PaypalConfig::CONTEXT_EXPRESS_MINICART) ?>;
+
+        return {
+            visible: false,
+            context: '',
+            contextUrl: '',
+            reviewUrl: '',
+            allowedCurrencies: [],
+            cartData: {},
+            customer: {},
+            staticPaypalConfig: {},
+            staticPaypalSdkConfig: {},
+            quoteCurrency: '',
+            chkPayPalContextId: null,
+            paypalScriptLoaded: false,
+            paypalButtonRendered: false,
+            isRendering: false,
+            messages: {
+                paypalUnavailable: '<?= $escaper->escapeJs(__('Unable to start PayPal checkout. Please try again.')) ?>',
+                contextFailed: '<?= $escaper->escapeJs(__('PayPal could not be initialized. Please try again.')) ?>',
+            },
+            paypalButtonListeners: {
+                /**
+                 * Handles the private-content-loaded window event to hydrate cart and customer data.
+                 *
+                 * @param {CustomEvent} event Event carrying private-content section data.
+                 */
+                ['@private-content-loaded.window'](event) {
+                    this.onPrivateContentLoaded(event.detail?.data ?? event.detail);
+                },
+                /**
+                 * Handles the toggle-cart window event to re-evaluate button visibility in minicart context.
+                 */
+                ['@toggle-cart.window']() {
+                    if (!this.isMinicartContext()) {
+                        return;
+                    }
+
+                    this.$nextTick(() => this.evaluateVisibility());
+                },
+                /**
+                 * Handles the reload-customer-section-data window event to refresh button visibility.
+                 */
+                ['@reload-customer-section-data.window']() {
+                    this.$nextTick(() => this.evaluateVisibility());
+                },
+            },
+
+            /**
+             * Initialises the Alpine component by reading dataset attributes and triggering visibility evaluation.
+             */
+            init() {
+                const {
+                    context = '',
+                    contextUrl = '',
+                    reviewUrl = '',
+                    quoteCurrency = '',
+                    allowedCurrencies: allowedCurrenciesJson = '[]',
+                    paypalConfig: paypalConfigJson = '{}',
+                    paypalSdkConfig: paypalSdkConfigJson = '{}',
+                } = this.$el.dataset;
+
+                this.context = context;
+                this.contextUrl = contextUrl;
+                this.reviewUrl = reviewUrl;
+                this.quoteCurrency = quoteCurrency;
+
+                try {
+                    this.allowedCurrencies = JSON.parse(allowedCurrenciesJson);
+                } catch (error) {
+                    this.allowedCurrencies = [];
+                }
+
+                try {
+                    this.staticPaypalConfig = JSON.parse(paypalConfigJson);
+                } catch (error) {
+                    this.staticPaypalConfig = {};
+                }
+
+                try {
+                    this.staticPaypalSdkConfig = JSON.parse(paypalSdkConfigJson);
+                } catch (error) {
+                    this.staticPaypalSdkConfig = {};
+                }
+
+                log('init', {
+                    context: this.context,
+                    staticPaypalConfig: this.staticPaypalConfig,
+                    quoteCurrency: this.quoteCurrency,
+                });
+
+                this.hydrateFromHyvaCustomerData();
+                this.$nextTick(() => this.evaluateVisibility());
+            },
+
+            /**
+             * Seeds cart and customer state from the Hyvä browser storage cache.
+             */
+            hydrateFromHyvaCustomerData() {
+                if (typeof hyva === 'undefined' || typeof hyva.getBrowserStorage !== 'function') {
+                    return;
+                }
+
+                const browserStorage = hyva.getBrowserStorage();
+
+                if (!browserStorage) {
+                    return;
+                }
+
+                try {
+                    const { cart, customer } = JSON.parse(browserStorage.getItem('mage-cache-storage') || '{}');
+
+                    if (cart || customer) {
+                        this.onPrivateContentLoaded({ cart, customer });
+                    }
+                } catch (error) {
+                    console.warn('[Checkout.com PayPal] Unable to read Hyvä customer-data storage', error);
+                }
+            },
+
+            /**
+             * Returns whether this component instance runs inside the minicart context.
+             *
+             * @return {boolean} True if the context is express minicart.
+             */
+            isMinicartContext() {
+                return this.context === CONTEXT_EXPRESS_MINICART;
+            },
+
+            /**
+             * Returns whether this component instance runs inside the cart page context.
+             *
+             * @return {boolean} True if the context is express cart.
+             */
+            isCartContext() {
+                return this.context === CONTEXT_EXPRESS_CART;
+            },
+
+            /**
+             * Returns the active PayPal configuration, preferring dynamic cart data over static config.
+             *
+             * @return {object} PayPal configuration object.
+             */
+            getPaypalConfig() {
+                return this.cartData?.checkoutcom_paypal || this.staticPaypalConfig;
+            },
+
+            /**
+             * Updates cart and customer state from private-content section data and re-evaluates visibility.
+             *
+             * @param {object} data Section data containing cart and customer keys.
+             */
+            onPrivateContentLoaded(data) {
+                if (!data) {
+                    return;
+                }
+
+                const { cart, customer } = data;
+
+                if (cart) {
+                    this.cartData = cart;
+                }
+
+                if (customer) {
+                    this.customer = customer;
+                }
+
+                this.evaluateVisibility();
+            },
+
+            /**
+             * Determines whether the PayPal button should be visible and triggers rendering if needed.
+             */
+            evaluateVisibility() {
+                const canUse = this.canUsePaypalExpress();
+                log('evaluateVisibility: canUse =', canUse, 'context =', this.context);
+
+                this.visible = canUse;
+
+                if (!canUse) {
+                    return;
+                }
+
+                if (this.isMinicartContext() && !this.isMinicartOpen()) {
+                    log('evaluateVisibility: minicart closed → not shown yet');
+                    return;
+                }
+
+                if (this.hasRenderedPaypalButton()) {
+                    this.visible = true;
+                    return;
+                }
+
+                if (!this.isRendering) {
+                    this.bootstrapPaypal();
+                }
+            },
+
+            /**
+             * Returns whether the PayPal button has already been rendered into the container.
+             *
+             * @return {boolean} True if the button is present in the DOM or tracked as rendered.
+             */
+            hasRenderedPaypalButton() {
+                const container = this.$refs.paypalContainer;
+
+                return this.paypalButtonRendered
+                    || Boolean(container?.querySelector('[data-paypal-button]'));
+            },
+
+            /**
+             * Returns whether the minicart drawer is currently open.
+             *
+             * @return {boolean} True if the cart drawer element has its open attribute set.
+             */
+            isMinicartOpen() {
+                const drawer = document.getElementById('cart-drawer');
+
+                return Boolean(drawer?.open);
+            },
+
+            /**
+             * Normalises a config flag value to a boolean, accepting 1, '1', or true.
+             *
+             * @param {*} value Raw config flag value.
+             * @return {boolean} True if the flag is considered enabled.
+             */
+            isConfigFlagEnabled(value) {
+                return value === 1 || value === '1' || value === true;
+            },
+
+            /**
+             * Checks whether all conditions are met to display and use the PayPal Express button.
+             *
+             * @return {boolean} True if PayPal Express is available for the current cart and context.
+             */
+            canUsePaypalExpress() {
+                const paypalConfig = this.getPaypalConfig();
+
+                if (!paypalConfig || !Object.keys(paypalConfig).length) {
+                    log('canUsePaypalExpress: no config → false');
+                    return false;
+                }
+
+                const quoteCurrency = this.getQuoteCurrency();
+                const guestAllowed = this.cartData.isGuestCheckoutAllowed || Boolean(this.customer?.firstname);
+                const result = this.isConfigFlagEnabled(paypalConfig.active)
+                    && this.isConfigFlagEnabled(paypalConfig[this.context])
+                    && guestAllowed
+                    && this.isCurrencyAllowed(quoteCurrency)
+                    && Number(this.cartData.summary_count) > 0;
+
+                log('canUsePaypalExpress', {
+                    active: paypalConfig.active,
+                    context: this.context,
+                    contextFlag: paypalConfig[this.context],
+                    guestAllowed,
+                    currency: quoteCurrency,
+                    summary_count: this.cartData.summary_count,
+                    result,
+                });
+
+                return result;
+            },
+
+            /**
+             * Returns the list of currencies allowed for PayPal Express.
+             *
+             * @return {string[]} Array of allowed currency codes.
+             */
+            getAllowedCurrenciesList() {
+                return this.allowedCurrencies.length ? this.allowedCurrencies : [];
+            },
+
+            /**
+             * Builds the PayPal SDK configuration object, merging static config with computed defaults.
+             *
+             * @return {object} SDK configuration including intent, commit, and pageType.
+             */
+            getPaypalSdkConfig() {
+                return {
+                    intent: 'capture',
+                    commit: 'false',
+                    pageType: this.isMinicartContext() ? 'mini-cart' : 'cart',
+                    ...this.staticPaypalSdkConfig,
+                };
+            },
+
+            /**
+             * Checks whether the given currency is in the list of allowed currencies.
+             *
+             * @param {string} currency Currency code to check.
+             * @return {boolean} True if the currency is allowed or no restriction list is configured.
+             */
+            isCurrencyAllowed(currency) {
+                const allowed = this.getAllowedCurrenciesList();
+
+                if (!allowed.length || !currency) {
+                    return Boolean(currency);
+                }
+
+                return allowed.includes(currency);
+            },
+
+            /**
+             * Loads the PayPal SDK and renders the button, guarding against duplicate execution.
+             */
+            async bootstrapPaypal() {
+                if (this.isRendering || this.hasRenderedPaypalButton()) {
+                    return;
+                }
+
+                this.isRendering = true;
+                log('bootstrapPaypal: loading SDK and rendering button');
+
+                try {
+                    await this.loadPaypalScript();
+                    await this.$nextTick();
+                    await this.renderPaypalButton();
+                    log('bootstrapPaypal: visible = true');
+                    this.visible = true;
+                } catch (error) {
+                    console.error('[Checkout.com PayPal]', error);
+                } finally {
+                    this.isRendering = false;
+                }
+            },
+
+            /**
+             * Resolves PayPal credentials and loads the PayPal SDK script for the current cart.
+             *
+             * @return {Promise<void>} Promise that resolves once the SDK script is loaded.
+             */
+            loadPaypalScript() {
+                if (this.paypalScriptLoaded || typeof paypal !== 'undefined') {
+                    this.paypalScriptLoaded = true;
+                    return Promise.resolve();
+                }
+
+                const paypalConfig = this.getPaypalConfig();
+                const sdkConfig = this.getPaypalSdkConfig();
+                const {
+                    checkout_client_id: checkoutClientId,
+                    merchant_id: merchantId,
+                    checkout_partner_attribution_id: partnerAttributionId,
+                } = paypalConfig ?? {};
+
+                if (!checkoutClientId || !merchantId) {
+                    return Promise.reject(new Error('PayPal credentials are missing from cart section data'));
+                }
+
+                const scriptSrc = buildPaypalSdkScriptUrl(
+                    paypalConfig,
+                    sdkConfig,
+                    this.getQuoteCurrency()
+                );
+
+                const { pageType } = sdkConfig;
+
+                return loadCkoPaypalSdk(scriptSrc, {
+                    pageType,
+                    partnerAttributionId,
+                }).then(() => {
+                    this.paypalScriptLoaded = true;
+                });
+            },
+
+            /**
+             * Returns the active quote currency code from cart data or the static dataset fallback.
+             *
+             * @return {string} Currency code, or an empty string if unavailable.
+             */
+            getQuoteCurrency() {
+                return this.cartData?.quote_currency_code
+                    || this.cartData?.quote_currency
+                    || this.quoteCurrency
+                    || '';
+            },
+
+            /**
+             * Renders the PayPal button into the container element via the PayPal JS SDK.
+             *
+             * @return {Promise<void>} Promise that resolves once the button is rendered.
+             */
+            renderPaypalButton() {
+                return new Promise((resolve, reject) => {
+                    const container = this.$refs.paypalContainer;
+
+                    if (!container || typeof paypal === 'undefined') {
+                        resolve();
+                        return;
+                    }
+
+                    if (!container.isConnected) {
+                        reject(new Error('PayPal container is not attached to the DOM'));
+                        return;
+                    }
+
+                    if (this.hasRenderedPaypalButton()) {
+                        this.paypalButtonRendered = true;
+                        resolve();
+                        return;
+                    }
+
+                    requestAnimationFrame(() => {
+                        if (!container.isConnected) {
+                            reject(new Error('PayPal container was removed before render'));
+                            return;
+                        }
+
+                        paypal.Buttons({
+                            style: PAYPAL_BUTTON_STYLE,
+                            createOrder: () => this.createPaypalOrder(),
+                            onApprove: () => {
+                                window.location.href = this.buildReviewUrl();
+                            },
+                            onError: () => {
+                                this.notifyUserError(this.messages.paypalUnavailable);
+                            },
+                        }).render(container).then(() => {
+                            this.paypalButtonRendered = true;
+                            resolve();
+                        }).catch((error) => {
+                            console.error('[Checkout.com PayPal] Button render failed', error);
+                            reject(error);
+                        });
+                    });
+                });
+            },
+
+            /**
+             * Creates a PayPal order by posting to the context URL and returns the PayPal order ID.
+             *
+             * @return {Promise<string>} Resolves with the PayPal order ID on success.
+             */
+            async createPaypalOrder() {
+                try {
+                    const response = await fetch(this.contextUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: JSON.stringify({
+                            forceAuthorizeMode: 0,
+                        }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('PayPal context request failed with status ' + response.status);
+                    }
+
+                    const { content } = await response.json();
+                    const { id: contextId, partner_metadata: partnerMetadata } = content ?? {};
+                    const { order_id: orderId } = partnerMetadata ?? {};
+
+                    if (!contextId || !orderId) {
+                        throw new Error('Invalid PayPal context response');
+                    }
+
+                    this.chkPayPalContextId = contextId;
+
+                    return orderId;
+                } catch (error) {
+                    console.error('[Checkout.com PayPal] createOrder failed', error);
+                    this.notifyUserError(this.messages.contextFailed);
+                    throw error;
+                }
+            },
+
+            /**
+             * Builds the order review URL by appending the PayPal context ID to the base review URL.
+             *
+             * @return {string} Full review URL including the context ID path segment.
+             */
+            buildReviewUrl() {
+                return `${this.reviewUrl}/contextId/${this.chkPayPalContextId}`;
+            },
+
+            /**
+             * Displays an error message to the user via Hyvä dispatchMessages or a native alert fallback.
+             *
+             * @param {string} message Error message text to display.
+             */
+            notifyUserError(message) {
+                const text = message || this.messages.paypalUnavailable;
+
+                if (typeof window.dispatchMessages === 'function') {
+                    window.dispatchMessages([{ type: 'error', text }]);
+                    return;
+                }
+
+                window.alert(text);
+            },
+        };
+    }
+
+    window.addEventListener('alpine:init', () => {
+        Alpine.data('initPaypalButton', initPaypalButton);
+    }, { once: true });
+})();
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>

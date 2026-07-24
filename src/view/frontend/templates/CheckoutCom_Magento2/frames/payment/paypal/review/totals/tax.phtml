@@ -1,0 +1,74 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Magento\Checkout\Helper\Data as CheckoutHelper;
+use Magento\Framework\Escaper;
+use Magento\Tax\Block\Checkout\Tax;
+use Magento\Tax\Helper\Data as TaxHelper;
+
+/** @var Tax $block */
+/** @var Escaper $escaper */
+
+$value = $block->getTotal()->getValue();
+$colspan = (int) $block->getColspan();
+/** @var TaxHelper $taxHelper */
+$taxHelper = $block->getData('taxHelper');
+/** @var CheckoutHelper $checkoutHelper */
+$checkoutHelper = $block->getData('checkoutHelper');
+$markCellClass = 'py-2 pe-4 text-left font-normal text-fg-secondary align-top';
+$amountCellClass = 'py-2 text-right font-medium align-top';
+$detailMarkClass = 'py-1 pe-4 ps-4 text-left text-sm text-fg-secondary align-top';
+?>
+<tr class="border-t border-slate-100">
+    <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">
+        <?= $escaper->escapeHtml($block->getTotal()->getTitle()) ?>
+    </th>
+    <td class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?>" data-th="<?= $escaper->escapeHtmlAttr($block->getTotal()->getTitle()) ?>">
+        <?= /* @noEscape */ $checkoutHelper->formatPrice($value) ?>
+    </td>
+</tr>
+<?php if ($taxHelper->displayFullSummary() && $value != 0): ?>
+    <?php foreach ($block->getTotal()->getFullInfo() as $info): ?>
+        <?php if (isset($info['hidden']) && $info['hidden']) {
+            continue;
+        } ?>
+        <?php
+        $amount = $info['amount'];
+        $rates = $info['rates'];
+        $isFirst = true;
+        ?>
+        <?php foreach ($rates as $rate): ?>
+            <tr class="border-t border-slate-50">
+                <th class="<?= $escaper->escapeHtmlAttr($detailMarkClass) ?>" colspan="<?= $colspan ?>" scope="row">
+                    <?= $escaper->escapeHtml($rate['title']) ?>
+                    <?php if ($rate['percent'] !== null): ?>
+                        (<?= $escaper->escapeHtml((string) (float) $rate['percent']) ?>%)
+                    <?php endif; ?>
+                </th>
+                <?php if ($isFirst): ?>
+                    <td
+                        class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?> text-sm"
+                        rowspan="<?= (int) count($rates) ?>"
+                        data-th="<?= $escaper->escapeHtmlAttr($rate['title']) ?>"
+                    >
+                        <?= /* @noEscape */ $checkoutHelper->formatPrice($amount) ?>
+                    </td>
+                <?php endif; ?>
+            </tr>
+            <?php $isFirst = false; ?>
+        <?php endforeach; ?>
+    <?php endforeach; ?>
+<?php endif; ?>

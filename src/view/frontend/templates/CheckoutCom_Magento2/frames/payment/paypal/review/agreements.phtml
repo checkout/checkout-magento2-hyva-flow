@@ -1,0 +1,55 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Magento\CheckoutAgreements\Block\Agreements;
+use Magento\CheckoutAgreements\Model\AgreementModeOptions;
+use Magento\Framework\Escaper;
+
+/** @var Agreements $block */
+/** @var Escaper $escaper */
+
+$agreements = $block->getAgreements();
+
+if (!$agreements || !count($agreements)) {
+    return;
+}
+
+$manualMode = AgreementModeOptions::MODE_MANUAL;
+?>
+<div id="checkoutcom-paypal-agreements" class="checkout-agreements mb-6 space-y-4">
+    <?php foreach ($agreements as $agreement): ?>
+        <?php if (!$agreement->getIsActive()) {
+            continue;
+        } ?>
+        <?php $isRequired = (int) $agreement->getMode() === $manualMode; ?>
+        <label class="flex gap-3 items-start cursor-pointer" for="checkoutcom-paypal-agreement-<?= (int) $agreement->getAgreementId() ?>">
+            <input type="checkbox"
+                   id="checkoutcom-paypal-agreement-<?= (int) $agreement->getAgreementId() ?>"
+                   name="agreement[<?= (int) $agreement->getAgreementId() ?>]"
+                   value="1"
+                   class="mt-1 form-checkbox shrink-0"
+                   <?= $isRequired ? 'required' : '' ?>
+                   @change="$dispatch('checkoutcom-paypal-agreement-changed')"/>
+            <span class="text-sm leading-snug">
+                <?php if ($agreement->getIsHtml()): ?>
+                    <?= /* @noEscape */ $agreement->getCheckboxText() ?>
+                <?php else: ?>
+                    <?= $escaper->escapeHtml($agreement->getCheckboxText()) ?>
+                <?php endif; ?>
+            </span>
+        </label>
+    <?php endforeach; ?>
+</div>

@@ -1,0 +1,93 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Magento\Checkout\Block\Cart\Item\Renderer;
+use Magento\Framework\Escaper;
+
+/** @var Renderer $block */
+/** @var Escaper $escaper */
+
+$item = $block->getItem();
+$qty = $block->getQty();
+?>
+<tbody class="border-b border-slate-200 last:border-b-0">
+    <tr class="align-top">
+        <td class="py-4 pe-4" data-th="<?= $escaper->escapeHtmlAttr(__('Product Name')) ?>">
+            <div class="flex gap-4">
+                <?php if ($block->hasProductUrl()): ?>
+                    <a
+                        href="<?= $escaper->escapeUrl($block->getProductUrl()) ?>"
+                        tabindex="-1"
+                        class="product-item-photo shrink-0"
+                    >
+                <?php else: ?>
+                    <span class="product-item-photo shrink-0">
+                <?php endif; ?>
+                    <?= $block->getImage($block->getProductForThumbnail(), 'cart_page_product_thumbnail')
+                        ->setTemplate('Magento_Catalog::product/image.phtml')
+                        ->toHtml() ?>
+                <?php if ($block->hasProductUrl()): ?>
+                    </a>
+                <?php else: ?>
+                    </span>
+                <?php endif; ?>
+                <div class="min-w-0">
+                    <p class="font-semibold text-fg">
+                        <?php if ($block->hasProductUrl()): ?>
+                            <a href="<?= $escaper->escapeUrl($block->getProductUrl()) ?>">
+                                <?= $escaper->escapeHtml($block->getProductName()) ?>
+                            </a>
+                        <?php else: ?>
+                            <?= $escaper->escapeHtml($block->getProductName()) ?>
+                        <?php endif; ?>
+                    </p>
+                    <?php if ($options = $block->getOptionList()): ?>
+                        <dl class="mt-2 item-options table text-sm">
+                            <?php foreach ($options as $option): ?>
+                                <?php $formatedOptionValue = $block->getFormatedOptionValue($option) ?>
+                                <div class="table-row">
+                                    <dt class="table-cell font-normal min-w-16 pe-2 pb-1 text-fg-secondary">
+                                        <?= $escaper->escapeHtml($option['label']) ?>
+                                    </dt>
+                                    <dd class="table-cell font-medium pb-1">
+                                        <?php if (isset($formatedOptionValue['full_view'])): ?>
+                                            <?= /* @noEscape */ $formatedOptionValue['full_view'] ?>
+                                        <?php else: ?>
+                                            <?= $escaper->escapeHtml($formatedOptionValue['value'], ['span', 'a']) ?>
+                                        <?php endif; ?>
+                                    </dd>
+                                </div>
+                            <?php endforeach; ?>
+                        </dl>
+                    <?php endif; ?>
+                    <?php $addInfoBlock = $block->getProductAdditionalInformationBlock(); ?>
+                    <?php if ($addInfoBlock): ?>
+                        <?= $addInfoBlock->setItem($item)->toHtml() ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </td>
+        <td class="py-4 pe-4 text-fg-secondary whitespace-nowrap" data-th="<?= $escaper->escapeHtmlAttr(__('Price')) ?>">
+            <?= /* @noEscape */ $block->getUnitPriceHtml($item) ?>
+        </td>
+        <td class="py-4 pe-4 whitespace-nowrap" data-th="<?= $escaper->escapeHtmlAttr(__('Qty')) ?>">
+            <?= $escaper->escapeHtml($qty) ?>
+        </td>
+        <td class="py-4 font-medium whitespace-nowrap text-right" data-th="<?= $escaper->escapeHtmlAttr(__('Subtotal')) ?>">
+            <?= /* @noEscape */ $block->getRowTotalHtml($item) ?>
+        </td>
+    </tr>
+</tbody>
