@@ -1,0 +1,37 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Magento\Checkout\Block\Cart\Totals;
+use Magento\Framework\Escaper;
+
+/** @var Totals $block */
+/** @var Escaper $escaper */
+?>
+<?php if ($block->getTotals()): ?>
+    <?php $colspan = 3; ?>
+    <?= /* @noEscape */ $block->renderTotals(null, $colspan) ?>
+    <?= /* @noEscape */ $block->renderTotals('footer', $colspan) ?>
+    <?php if ($block->needDisplayBaseGrandtotal()): ?>
+        <tr class="border-t border-slate-200">
+            <th class="py-2 pe-4 text-left font-medium text-fg-secondary" colspan="<?= (int) $colspan ?>" scope="row">
+                <?= $escaper->escapeHtml(__('Your credit card will be charged for')) ?>
+            </th>
+            <td class="py-2 text-right font-semibold" data-th="<?= $escaper->escapeHtmlAttr(__('Your credit card will be charged for')) ?>">
+                <?= /* @noEscape */ $block->displayBaseGrandtotal() ?>
+            </td>
+        </tr>
+    <?php endif; ?>
+<?php endif; ?>

@@ -1,0 +1,83 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="checkout.paypal.express.script" remove="true"/>
+        <referenceBlock name="checkout.applepay.script" remove="true"/>
+        <referenceBlock name="minicart.checkout.config" remove="true"/>
+
+        <referenceBlock name="minicart">
+            <arguments>
+                <argument name="jsLayout" xsi:type="array">
+                    <item name="components" xsi:type="array">
+                        <item name="minicart_content" xsi:type="array">
+                            <item name="children" xsi:type="array">
+                                <item name="promotion" xsi:type="array">
+                                    <item name="children" xsi:type="array">
+                                        <item name="applepay" xsi:type="array">
+                                            <item name="config" xsi:type="array">
+                                                <item name="componentDisabled" xsi:type="boolean">true</item>
+                                            </item>
+                                        </item>
+                                        <item name="paypal" xsi:type="array">
+                                            <item name="config" xsi:type="array">
+                                                <item name="componentDisabled" xsi:type="boolean">true</item>
+                                            </item>
+                                        </item>
+                                    </item>
+                                </item>
+                            </item>
+                        </item>
+                    </item>
+                </argument>
+            </arguments>
+        </referenceBlock>
+
+        <referenceBlock name="cart-drawer">
+            <referenceContainer name="extra_actions">
+                <block name="checkoutcom.hyva.applepay.minicart.button"
+                       template="CheckoutCom_Magento2Hyva::applepay/button-express.phtml"
+                       before="-">
+                    <arguments>
+                        <!-- Must match ApplePayConfig::CONTEXT_EXPRESS_MINICART -->
+                        <argument name="applepay_context" xsi:type="string">express_minicart</argument>
+                    </arguments>
+                </block>
+                <block name="checkoutcom.hyva.paypal.minicart.button"
+                       template="CheckoutCom_Magento2Hyva::paypal/button-express.phtml"
+                       before="-">
+                    <arguments>
+                        <!-- Must match PaypalConfig::CONTEXT_EXPRESS_MINICART -->
+                        <argument name="paypal_context" xsi:type="string">express_minicart</argument>
+                    </arguments>
+                </block>
+            </referenceContainer>
+        </referenceBlock>
+
+        <referenceContainer name="before.body.end">
+            <block name="checkoutcom.hyva.utils.js"
+                   template="CheckoutCom_Magento2Hyva::js/utils.phtml"
+                   before="checkoutcom.hyva.paypal.js"/>
+            <block name="checkoutcom.hyva.paypal.js"
+                   template="CheckoutCom_Magento2Hyva::js/button-paypal.phtml"
+                   ifconfig="payment/checkoutcom_paypal/active"/>
+            <block name="checkoutcom.hyva.applepay.js"
+                   template="CheckoutCom_Magento2Hyva::js/button-applepay.phtml"
+                   ifconfig="payment/checkoutcom_apple_pay/active"/>
+        </referenceContainer>
+    </body>
+</page>

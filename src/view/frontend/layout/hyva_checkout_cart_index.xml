@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="paypal.button" remove="true"/>
+        <referenceBlock name="apple.pay.button" remove="true"/>
+
+        <referenceContainer name="checkout.cart.methods">
+            <block name="checkoutcom.hyva.applepay.cart.button"
+                   template="CheckoutCom_Magento2Hyva::applepay/button-express.phtml"
+                   after="checkout.cart.methods.onepage.bottom.php-cart">
+                <arguments>
+                    <!-- Must match ApplePayConfig::CONTEXT_EXPRESS_CART -->
+                    <argument name="applepay_context" xsi:type="string">express_cart</argument>
+                </arguments>
+            </block>
+            <block name="checkoutcom.hyva.paypal.cart.button"
+                   template="CheckoutCom_Magento2Hyva::paypal/button-express.phtml"
+                   after="checkoutcom.hyva.applepay.cart.button">
+                <arguments>
+                    <!-- Must match PaypalConfig::CONTEXT_EXPRESS_CART -->
+                    <argument name="paypal_context" xsi:type="string">express_cart</argument>
+                </arguments>
+            </block>
+        </referenceContainer>
+
+        <referenceBlock name="checkout.paypal.express.script" remove="true"/>
+    </body>
+</page>

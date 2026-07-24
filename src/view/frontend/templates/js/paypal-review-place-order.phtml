@@ -1,0 +1,171 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
+
+/** @var HyvaCsp $hyvaCsp */
+/** @var Escaper $escaper */
+?>
+<script>
+(function () {
+    'use strict';
+
+    /**
+     * Alpine component factory for the PayPal review place-order widget.
+     *
+     * @return {Object} Alpine component definition with state and methods.
+     */
+    function paypalReviewPlaceOrder() {
+        return {
+            placing: false,
+            canSubmit: false,
+            contextId: '',
+            methodId: '',
+            placeOrderUrl: '',
+            successUrl: '',
+
+            /**
+             * Initializes component state from data attributes and binds agreement change listener.
+             */
+            init() {
+                this.contextId = this.$el.dataset.contextId || '';
+                this.methodId = this.$el.dataset.methodId || '';
+                this.placeOrderUrl = this.$el.dataset.placeOrderUrl || '';
+                this.successUrl = this.$el.dataset.successUrl || '';
+                this.updateCanSubmit();
+
+                this.$el.addEventListener('checkoutcom-paypal-agreement-changed', () => {
+                    this.updateCanSubmit();
+                });
+            },
+
+            /**
+             * Recomputes canSubmit based on context availability, placement flag, and required agreement checkboxes.
+             */
+            updateCanSubmit() {
+                const hasContext = Boolean(this.contextId);
+                const canPlace = this.$el.dataset.canPlaceOrder === '1';
+
+                if (!hasContext || !canPlace) {
+                    this.canSubmit = false;
+                    return;
+                }
+
+                const requiredCheckboxes = this.$el.querySelectorAll(
+                    '#checkoutcom-paypal-agreements input[type="checkbox"][required]'
+                );
+
+                if (!requiredCheckboxes.length) {
+                    this.canSubmit = true;
+                    return;
+                }
+
+                this.canSubmit = Array.from(requiredCheckboxes).every((checkbox) => checkbox.checked);
+            },
+
+            /**
+             * Submits the PayPal order by posting context and agreement data to the place-order endpoint.
+             */
+            async submit() {
+                if (this.placing || !this.canSubmit || !this.contextId) {
+                    return;
+                }
+
+                this.placing = true;
+
+                try {
+                    const formData = new URLSearchParams();
+                    formData.append('form_key', hyva.getFormKey());
+                    formData.append('methodId', this.methodId);
+                    formData.append('contextPaymentId', this.contextId);
+
+                    this.appendAgreementIds(formData);
+
+                    const response = await fetch(this.placeOrderUrl, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: formData,
+                        credentials: 'same-origin',
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Server responded with ' + response.status);
+                    }
+
+                    const data = await response.json();
+
+                    if (data && data.success) {
+                        window.location.href = data.url || this.successUrl;
+                        return;
+                    }
+
+                    this.notifyError(data?.message);
+                    this.placing = false;
+                } catch (error) {
+                    console.error('[Checkout.com PayPal] Place order failed', error);
+                    this.notifyError();
+                    this.placing = false;
+                }
+            },
+
+            /**
+             * Appends checked agreement checkbox IDs to the given form data payload.
+             *
+             * @param {URLSearchParams} formData Form data object to append agreement entries to.
+             */
+            appendAgreementIds(formData) {
+                const checkboxes = this.$el.querySelectorAll(
+                    '#checkoutcom-paypal-agreements input[type="checkbox"]:checked'
+                );
+
+                checkboxes.forEach((checkbox) => {
+                    const match = checkbox.name.match(/agreement\[(\d+)]/);
+
+                    if (match) {
+                        formData.append('agreement[' + match[1] + ']', '1');
+                    }
+                });
+            },
+
+            /**
+             * Dispatches an error message via the Hyvä message bus or falls back to a native alert.
+             *
+             * @param {string} [message] Optional error message to display; falls back to the default translation.
+             */
+            notifyError(message) {
+                const fallback = '<?= $escaper->escapeJs(__('Unable to submit your order. Please try again or return to cart.')) ?>';
+                const text = message || fallback;
+
+                if (typeof window.dispatchMessages === 'function') {
+                    window.dispatchMessages([{ type: 'error', text }]);
+                    return;
+                }
+
+                window.alert(text);
+            },
+        };
+    }
+
+    window.addEventListener('alpine:init', () => {
+        Alpine.data('paypalReviewPlaceOrder', paypalReviewPlaceOrder);
+    }, { once: true });
+})();
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>

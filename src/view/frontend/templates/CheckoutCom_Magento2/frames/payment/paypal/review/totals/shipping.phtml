@@ -1,0 +1,69 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Magento\Checkout\Helper\Data as CheckoutHelper;
+use Magento\Framework\Escaper;
+use Magento\Tax\Block\Checkout\Shipping;
+
+/** @var Shipping $block */
+/** @var Escaper $escaper */
+
+if (!$block->displayShipping()) {
+    return;
+}
+
+$colspan = (int) $block->getColspan();
+/** @var CheckoutHelper $checkoutHelper */
+$checkoutHelper = $block->getData('checkoutHelper');
+$markCellClass = 'py-2 pe-4 text-left font-normal text-fg-secondary align-top';
+$amountCellClass = 'py-2 text-right font-medium align-top';
+?>
+<?php if ($block->displayBoth()): ?>
+    <tr class="border-t border-slate-100">
+        <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">
+            <?= $escaper->escapeHtml($block->getExcludeTaxLabel()) ?>
+        </th>
+        <td class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?>" data-th="<?= $escaper->escapeHtmlAttr($block->getExcludeTaxLabel()) ?>">
+            <?= /* @noEscape */ $checkoutHelper->formatPrice($block->getShippingExcludeTax()) ?>
+        </td>
+    </tr>
+    <tr class="border-t border-slate-100">
+        <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">
+            <?= $escaper->escapeHtml($block->getIncludeTaxLabel()) ?>
+        </th>
+        <td class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?>" data-th="<?= $escaper->escapeHtmlAttr($block->getIncludeTaxLabel()) ?>">
+            <?= /* @noEscape */ $checkoutHelper->formatPrice($block->getShippingIncludeTax()) ?>
+        </td>
+    </tr>
+<?php elseif ($block->displayIncludeTax()): ?>
+    <tr class="border-t border-slate-100">
+        <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">
+            <?= $escaper->escapeHtml($block->getTotal()->getTitle()) ?>
+        </th>
+        <td class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?>" data-th="<?= $escaper->escapeHtmlAttr($block->getTotal()->getTitle()) ?>">
+            <?= /* @noEscape */ $checkoutHelper->formatPrice($block->getShippingIncludeTax()) ?>
+        </td>
+    </tr>
+<?php else: ?>
+    <tr class="border-t border-slate-100">
+        <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">
+            <?= $escaper->escapeHtml($block->getTotal()->getTitle()) ?>
+        </th>
+        <td class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?>" data-th="<?= $escaper->escapeHtmlAttr($block->getTotal()->getTitle()) ?>">
+            <?= /* @noEscape */ $checkoutHelper->formatPrice($block->getShippingExcludeTax()) ?>
+        </td>
+    </tr>
+<?php endif; ?>

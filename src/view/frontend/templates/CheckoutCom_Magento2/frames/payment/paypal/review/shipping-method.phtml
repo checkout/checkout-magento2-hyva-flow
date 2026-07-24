@@ -1,0 +1,90 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2\Block\Paypal\Review\ShippingMethod;
+use CheckoutCom\Magento2\Controller\Paypal\Review;
+use Magento\Framework\Escaper;
+
+/** @var ShippingMethod $block */
+/** @var Escaper $escaper */
+
+$rates = $block->getRates();
+$contextId = (string) $block->getRequest()->getParam(Review::PAYMENT_CONTEXT_ID_PARAMETER);
+$saveShippingUrl = $block->getUrl('checkout_com/paypal/saveExpressShippingMethod', [
+    Review::PAYMENT_CONTEXT_ID_PARAMETER => $contextId,
+]);
+
+$currentMethodCode = '';
+
+foreach ($rates as $rate) {
+    foreach ($rate as $carrierMethod) {
+        if ($block->isCurrentShippingRate($carrierMethod)) {
+            $currentMethodCode = (string) $carrierMethod->getCode();
+            break 2;
+        }
+    }
+}
+?>
+<?= $block->getChildHtml('checkoutcom.hyva.paypal.review.shipping.js') ?>
+<section id="checkoutcom-paypal-shipping-methods"
+         class="card p-6 border border-slate-200 rounded-lg relative"
+         aria-labelledby="checkoutcom-paypal-shipping-title"
+         x-data="paypalReviewShippingMethod"
+         data-current-method="<?= $escaper->escapeHtmlAttr($currentMethodCode) ?>"
+         data-save-url="<?= $escaper->escapeUrl($saveShippingUrl) ?>">
+    <h2 id="checkoutcom-paypal-shipping-title" class="text-lg font-semibold mb-4">
+        <?= $escaper->escapeHtml(__('Shipping Method')) ?>
+    </h2>
+
+    <div x-show="saving"
+         x-cloak
+         class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/70"
+         aria-live="polite"
+         aria-busy="true">
+        <span class="inline-block w-6 h-6 border-2 border-primary border-r-transparent rounded-full animate-spin"
+              aria-hidden="true"></span>
+        <span class="sr-only"><?= $escaper->escapeHtml(__('Updating shipping method...')) ?></span>
+    </div>
+
+    <div class="space-y-2" :class="{ 'opacity-50 pointer-events-none': saving }">
+        <?php if (!empty($rates)): ?>
+            <?php foreach ($rates as $rate): ?>
+                <?php foreach ($rate as $carrierMethod): ?>
+                    <?php
+                    $methodCode = (string) $carrierMethod->getCode();
+                    $isCurrentMethod = $block->isCurrentShippingRate($carrierMethod);
+                    ?>
+                    <button type="button"
+                            class="w-full text-left p-3 border rounded-lg transition-colors <?= $isCurrentMethod
+                                ? 'border-2 border-primary bg-slate-50 font-semibold'
+                                : 'border-slate-200 hover:border-primary' ?>"
+                            title="<?= $escaper->escapeHtmlAttr(__('Choose this method')) ?>"
+                            data-method-code="<?= $escaper->escapeHtmlAttr($methodCode) ?>"
+                            :disabled="saving || isSelected($el.dataset.methodCode)"
+                            @click="selectMethod($el.dataset.methodCode)">
+                        <?= $escaper->escapeHtml($carrierMethod->getCarrierTitle()) ?> —
+                        <?= $escaper->escapeHtml($carrierMethod->getMethodTitle()) ?> —
+                        <?= /* @noEscape */ $block->getFormatedPrice($carrierMethod->getPrice()) ?>
+                    </button>
+                <?php endforeach; ?>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <p class="text-fg-secondary">
+                <?= $escaper->escapeHtml(__('Sorry, no quotes are available for this order right now.')) ?>
+            </p>
+        <?php endif; ?>
+    </div>
+</section>

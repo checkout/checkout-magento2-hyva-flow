@@ -1,0 +1,986 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2Hyva\ViewModel\ApplePayConfig;
+use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
+
+/** @var HyvaCsp $hyvaCsp */
+/** @var Escaper $escaper */
+?>
+<script>
+(function () {
+    'use strict';
+
+    const CONTEXT_EXPRESS_CART = <?= /* @noEscape */ json_encode(ApplePayConfig::CONTEXT_EXPRESS_CART) ?>;
+    const CONTEXT_EXPRESS_MINICART = <?= /* @noEscape */ json_encode(ApplePayConfig::CONTEXT_EXPRESS_MINICART) ?>;
+
+    const log = window.ckoHyva?.createLogger('[CKO Apple Pay]') ?? (() => {});
+
+    /**
+     * Perform a Magento REST API cart request, routing to carts/mine or guest-carts based on the route object.
+     *
+     * @param {string} baseUrl  Base REST URL (e.g. /rest/default/V1/).
+     * @param {string} endpoint Cart sub-endpoint (e.g. 'estimate-shipping-methods').
+     * @param {object|null} body  Request body, or null/undefined for GET requests.
+     * @param {string} [method]  HTTP method override; defaults to POST when body is present, GET otherwise.
+     * @param {{isLoggedIn: boolean, maskedQuoteId: string}} route  Cart routing context.
+     * @return {Promise<object|null>}  Parsed JSON response, or null on failure.
+     */
+    function magentoRestCall(baseUrl, endpoint, body, method, route) {
+        if (!baseUrl) {
+            return Promise.resolve(null);
+        }
+        
+        let cartPath;
+        if (route && route.isLoggedIn) {
+            cartPath = 'carts/mine/' + endpoint;
+        } else if (route && route.maskedQuoteId) {
+            cartPath = 'guest-carts/' + encodeURIComponent(route.maskedQuoteId) + '/' + endpoint;
+        } else {
+            log('magentoRestCall: cannot resolve cart route (guest without masked quote id)', { endpoint, route });
+            return Promise.resolve(null);
+        }
+
+        const url = baseUrl + cartPath;
+        const verb = method || (body ? 'POST' : 'GET');
+
+        const init = {
+            method: verb,
+            credentials: 'include',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        };
+
+        if (body !== undefined && body !== null) {
+            init.headers['Content-Type'] = 'application/json';
+            init.body = JSON.stringify(body);
+        }
+
+        return fetch(url, init)
+            .then((response) => {
+                if (!response.ok) {
+                    return null;
+                }
+                return response.json();
+            })
+            .catch(() => null);
+    }
+
+    /**
+     * Alpine component factory for the Apple Pay express-checkout button.
+     *
+     * @return {object}  Alpine data object with state and methods for the Apple Pay button.
+     */
+    function initApplePayButton() {
+        return {
+            visible: false,
+            processing: false,
+            context: '',
+            methodId: '',
+            validationUrl: '',
+            placeOrderUrl: '',
+            successUrl: '',
+            restBaseUrl: '',
+            quoteCurrency: '',
+            staticConfig: {},
+            cartData: {},
+            customer: {},
+            expressData: {},
+            shippingAddress: null,
+            selectedShippingMethod: null,
+            availableShippingMethods: [],
+            messages: {
+                unavailable: '<?= $escaper->escapeJs(__('Apple Pay is not available in this browser.')) ?>',
+                paymentFailed: '<?= $escaper->escapeJs(__('Apple Pay payment could not be processed. Please try again.')) ?>',
+            },
+
+            applePayButtonListeners: {
+                /**
+                 * Handle the Hyvä private-content-loaded window event and hydrate component state.
+                 *
+                 * @param {CustomEvent} event  Hyvä private-content-loaded event carrying customer-data sections.
+                 */
+                ['@private-content-loaded.window'](event) {
+                    this.onPrivateContentLoaded(event.detail?.data ?? event.detail);
+                },
+                /**
+                 * Handle the toggle-cart window event and re-evaluate button visibility for the minicart context.
+                 */
+                ['@toggle-cart.window']() {
+                    if (!this.isMinicartContext()) {
+                        return;
+                    }
+                    this.$nextTick(() => this.evaluateVisibility());
+                },
+                /**
+                 * Handle the reload-customer-section-data window event and re-evaluate button visibility.
+                 */
+                ['@reload-customer-section-data.window']() {
+                    this.$nextTick(() => this.evaluateVisibility());
+                },
+            },
+
+            /**
+             * Initialize the Alpine component from the element's dataset and trigger the initial visibility check.
+             */
+            init() {
+                const {
+                    context = '',
+                    methodId = '',
+                    validationUrl = '',
+                    placeOrderUrl = '',
+                    successUrl = '',
+                    restBaseUrl = '',
+                    quoteCurrency = '',
+                    applepayConfig: applePayConfigJson = '{}',
+                } = this.$el.dataset;
+
+                this.context = context;
+                this.methodId = methodId;
+                this.validationUrl = validationUrl;
+                this.placeOrderUrl = placeOrderUrl;
+                this.successUrl = successUrl;
+                this.restBaseUrl = restBaseUrl;
+                this.quoteCurrency = quoteCurrency;
+
+                try {
+                    this.staticConfig = JSON.parse(applePayConfigJson);
+                } catch (error) {
+                    this.staticConfig = {};
+                }
+
+                log('init', {
+                    context: this.context,
+                    staticConfig: this.staticConfig,
+                    restBaseUrl: this.restBaseUrl,
+                    hasApplePaySession: typeof window.ApplePaySession !== 'undefined',
+                });
+
+                this.hydrateFromHyvaCustomerData();
+                this.$nextTick(() => this.evaluateVisibility());
+            },
+
+            /**
+             * Seed component state from the Hyvä browser-storage cache (mage-cache-storage) on first load.
+             */
+            hydrateFromHyvaCustomerData() {
+                if (typeof hyva === 'undefined' || typeof hyva.getBrowserStorage !== 'function') {
+                    log('hydrateFromHyvaCustomerData: hyva or getBrowserStorage not available');
+                    return;
+                }
+
+                const browserStorage = hyva.getBrowserStorage();
+
+                if (!browserStorage) {
+                    log('hydrateFromHyvaCustomerData: browserStorage is null');
+                    return;
+                }
+
+                try {
+                    const storage = JSON.parse(browserStorage.getItem('mage-cache-storage') || '{}');
+                    const { cart, customer } = storage;
+                    const expressData = storage['checkoutcom-express'];
+                    log('hydrateFromHyvaCustomerData', {
+                        cart_summary_count: cart?.summary_count,
+                        cart_has_data: !!cart,
+                        customer_is_logged_in: customer?.is_logged_in,
+                        express_is_logged_in: expressData?.is_logged_in,
+                        express_has_masked_quote_id: !!expressData?.masked_quote_id,
+                    });
+
+                    if (cart || customer || expressData) {
+                        this.onPrivateContentLoaded({ cart, customer, 'checkoutcom-express': expressData });
+                    }
+                } catch (error) {
+                    console.warn('[Checkout.com Apple Pay] Unable to read Hyvä customer-data storage', error);
+                }
+            },
+
+            /**
+             * Update component state with fresh Hyvä customer-data sections and re-evaluate visibility.
+             *
+             * @param {object} data  Customer-data payload containing cart, customer, and checkoutcom-express sections.
+             */
+            onPrivateContentLoaded(data) {
+                if (!data) {
+                    return;
+                }
+
+                const { cart, customer } = data;
+                const expressData = data['checkoutcom-express'];
+
+                if (cart) {
+                    this.cartData = cart;
+                }
+
+                if (customer) {
+                    this.customer = customer;
+                }
+
+                if (expressData) {
+                    this.expressData = expressData;
+                }
+
+                this.evaluateVisibility();
+            },
+
+            /**
+             * Check whether the button is rendered inside the minicart drawer.
+             *
+             * @return {boolean}  True when context equals CONTEXT_EXPRESS_MINICART.
+             */
+            isMinicartContext() {
+                return this.context === CONTEXT_EXPRESS_MINICART;
+            },
+
+            /**
+             * Check whether the button is rendered on the cart page.
+             *
+             * @return {boolean}  True when context equals CONTEXT_EXPRESS_CART.
+             */
+            isCartContext() {
+                return this.context === CONTEXT_EXPRESS_CART;
+            },
+
+            /**
+             * Check whether the minicart drawer is currently open.
+             *
+             * @return {boolean}  True when the #cart-drawer element has its open attribute set.
+             */
+            isMinicartOpen() {
+                const drawer = document.getElementById('cart-drawer');
+                return Boolean(drawer?.open);
+            },
+
+            /**
+             * Check whether the current browser supports Apple Pay and can make payments.
+             *
+             * @return {boolean}  True when ApplePaySession exists and canMakePayments() returns true.
+             */
+            isApplePayCapable() {
+                if (typeof window.ApplePaySession === 'undefined') {
+                    log('isApplePayCapable: ApplePaySession undefined');
+                    return false;
+                }
+
+                if (typeof ApplePaySession.canMakePayments !== 'function') {
+                    log('isApplePayCapable: canMakePayments not a function');
+                    return false;
+                }
+
+                try {
+                    const result = ApplePaySession.canMakePayments();
+                    log('isApplePayCapable: canMakePayments() =', result);
+                    return result;
+                } catch (error) {
+                    log('isApplePayCapable: canMakePayments() threw', error);
+                    return false;
+                }
+            },
+
+            /**
+             * Check whether a Checkout.com config flag value is truthy (1, '1', or true).
+             *
+             * @param {*} value  Raw config value to test.
+             * @return {boolean}  True when the value represents an enabled flag.
+             */
+            isConfigFlagEnabled(value) {
+                return value === 1 || value === '1' || value === true;
+            },
+
+            /**
+             * Determine whether Apple Pay can be offered in the current context.
+             *
+             * @return {boolean}  True when the browser is capable, the payment method is active and enabled for this context, and the cart is non-empty.
+             */
+            canUseApplePay() {
+                if (!this.isApplePayCapable()) {
+                    log('canUseApplePay: not capable → false');
+                    return false;
+                }
+
+                const cart = this.cartData || {};
+                const config = this.staticConfig || {};
+
+                if (!this.isConfigFlagEnabled(config.active)) {
+                    log('canUseApplePay: config.active disabled → false', config.active);
+                    return false;
+                }
+
+                const flagKey = this.isMinicartContext() ? 'enabled_on_minicart' : 'enabled_on_cart';
+
+                if (!this.isConfigFlagEnabled(config[flagKey])) {
+                    log('canUseApplePay:', flagKey, 'disabled → false', config[flagKey]);
+                    return false;
+                }
+
+                const summaryCount = Number(cart.summary_count);
+                log('canUseApplePay: summary_count =', summaryCount, '→', summaryCount > 0);
+                return summaryCount > 0;
+            },
+
+            /**
+             * Compute and set the visible state, accounting for minicart open/closed state.
+             */
+            evaluateVisibility() {
+                const canUse = this.canUseApplePay();
+                log('evaluateVisibility: canUse =', canUse, 'context =', this.context);
+
+                this.visible = canUse;
+
+                if (!canUse) {
+                    return;
+                }
+
+                if (this.isMinicartContext() && !this.isMinicartOpen()) {
+                    log('evaluateVisibility: minicart closed → not shown yet');
+                    this.visible = false;
+                    return;
+                }
+
+                this.visible = true;
+                log('evaluateVisibility: visible = true');
+            },
+
+            /**
+             * Resolve the quote currency code from cart data or static config.
+             *
+             * @return {string}  ISO 4217 currency code, or empty string when unavailable.
+             */
+            getQuoteCurrency() {
+                return this.cartData?.quote_currency_code
+                    || this.cartData?.quote_currency
+                    || this.quoteCurrency
+                    || this.staticConfig?.currency_code
+                    || '';
+            },
+
+            /**
+             * Check whether the current customer is authenticated.
+             *
+             * @return {boolean}  True when express data or customer section reports the customer as logged in.
+             */
+            isCustomerLoggedIn() {
+                return Boolean(this.expressData?.is_logged_in ?? this.customer?.is_logged_in);
+            },
+
+            /**
+             * Retrieve the guest cart masked quote ID from express data.
+             *
+             * @return {string}  Masked quote ID, or empty string for logged-in customers.
+             */
+            getMaskedQuoteId() {
+                return this.expressData?.masked_quote_id || '';
+            },
+            
+            /**
+             * Build the cart route descriptor used by magentoRestCall to resolve the correct cart endpoint.
+             *
+             * @return {{isLoggedIn: boolean, maskedQuoteId: string}}  Route object for magentoRestCall.
+             */
+            getRestRoute() {
+                return {
+                    isLoggedIn: this.isCustomerLoggedIn(),
+                    maskedQuoteId: this.getMaskedQuoteId(),
+                };
+            },
+
+            /**
+             * Resolve the cart grand total as a fixed-2-decimal string from available cart data fields.
+             *
+             * @return {string}  Grand total formatted to two decimal places, or '0.00' when unavailable.
+             */
+            getCartTotal() {
+                const cart = this.cartData || {};
+                const candidates = [
+                    cart.grand_total,
+                    cart.grandTotal,
+                    cart.subtotal_amount,
+                    cart.subtotalAmount,
+                    cart.subtotal,
+                ];
+
+                for (const value of candidates) {
+                    const number = Number(value);
+                    if (!Number.isNaN(number) && number > 0) {
+                        return number.toFixed(2);
+                    }
+                }
+
+                return '0.00';
+            },
+
+            /**
+             * Retrieve the merchant country code from static config.
+             *
+             * @return {string}  ISO 3166-1 alpha-2 country code, or empty string when not configured.
+             */
+            getCountryCode() {
+                return this.staticConfig?.country_code || '';
+            },
+
+            /**
+             * Return the list of supported card networks, filtering out 'mada' when the merchant country is not SA.
+             *
+             * @return {string[]}  Array of Apple Pay network identifiers.
+             */
+            getSupportedNetworks() {
+                const networks = this.staticConfig?.supported_networks || [];
+
+                if (!Array.isArray(networks)) {
+                    return [];
+                }
+
+                if (networks.includes('mada') && this.getCountryCode().toUpperCase() !== 'SA') {
+                    return networks.filter((network) => network !== 'mada');
+                }
+
+                return networks.slice();
+            },
+
+            /**
+             * Return the list of merchant capabilities from static config, defaulting to supports3DS.
+             *
+             * @return {string[]}  Array of Apple Pay merchant capability identifiers.
+             */
+            getMerchantCapabilities() {
+                const capabilities = this.staticConfig?.merchant_capabilities || [];
+
+                if (!Array.isArray(capabilities)) {
+                    return ['supports3DS'];
+                }
+
+                return capabilities;
+            },
+
+            /**
+             * Instantiate an ApplePaySession using the configured or fallback API version.
+             *
+             * @param {object} paymentRequest  Apple Pay payment request object.
+             * @return {ApplePaySession|null}  A new session instance, or null when no supported version is available.
+             */
+            createApplePaySession(paymentRequest) {
+                const requested = Number(this.staticConfig?.apple_pay_version) || 14;
+                const fallback = Number(this.staticConfig?.apple_pay_fallback_version) || 5;
+
+                const supports = ApplePaySession.supportsVersion(requested)
+                    ? requested
+                    : (ApplePaySession.supportsVersion(fallback) ? fallback : null);
+
+                if (!supports) {
+                    return null;
+                }
+
+                return new ApplePaySession(supports, paymentRequest);
+            },
+
+            /**
+             * Build the Apple Pay payment request object from current cart and config data.
+             *
+             * @return {object}  Apple Pay payment request descriptor.
+             */
+            buildPaymentRequest() {
+                const total = this.getCartTotal();
+                const currency = this.getQuoteCurrency();
+                const country = this.getCountryCode();
+
+                return {
+                    currencyCode: currency,
+                    countryCode: country,
+                    total: {
+                        type: 'final',
+                        label: window.location.host,
+                        amount: total,
+                    },
+                    supportedNetworks: this.getSupportedNetworks(),
+                    merchantCapabilities: this.getMerchantCapabilities(),
+                    requiredShippingContactFields: ['postalAddress', 'name', 'phone', 'email'],
+                    requiredBillingContactFields: ['postalAddress', 'name', 'phone', 'email'],
+                    shippingMethods: [],
+                };
+            },
+
+            /**
+             * Handle the Apple Pay button click: guard against re-entry, build the payment request, and start the session.
+             */
+            onClick() {
+                if (this.processing) {
+                    return;
+                }
+
+                if (!this.canUseApplePay()) {
+                    this.notifyUserError(this.messages.unavailable);
+                    return;
+                }
+
+                this.processing = true;
+
+                const paymentRequest = this.buildPaymentRequest();
+                const session = this.createApplePaySession(paymentRequest);
+
+                if (!session) {
+                    this.processing = false;
+                    this.notifyUserError(this.messages.unavailable);
+                    return;
+                }
+
+                this.bindSessionCallbacks(session);
+
+                try {
+                    session.begin();
+                } catch (error) {
+                    this.processing = false;
+                    console.error('[Checkout.com Apple Pay] session.begin() failed', error);
+                    this.notifyUserError(this.messages.unavailable);
+                }
+            },
+
+            /**
+             * Attach all ApplePaySession event handlers (merchant validation, shipping, payment authorisation, cancel).
+             *
+             * @param {ApplePaySession} session  The active Apple Pay session to configure.
+             */
+            bindSessionCallbacks(session) {
+                session.onvalidatemerchant = (event) => {
+                    this.performMerchantValidation(event.validationURL)
+                        .then((merchantSession) => {
+                            if (merchantSession) {
+                                session.completeMerchantValidation(merchantSession);
+                            } else {
+                                session.abort();
+                                this.processing = false;
+                                this.notifyUserError(this.messages.paymentFailed);
+                            }
+                        });
+                };
+
+                session.onshippingcontactselected = async (event) => {
+                    try {
+                        this.shippingAddress = event.shippingContact;
+
+                        const rawMethods = await this.refreshShippingMethods(event.shippingContact);
+                        const shippingMethods = Array.isArray(rawMethods) ? rawMethods : [];
+
+                        if (shippingMethods.length) {
+                            this.selectedShippingMethod = this.availableShippingMethods[0] || null;
+                        }
+
+                        const sheetTotal = await this.computeSheetTotal(
+                            this.selectedShippingMethod,
+                            event.shippingContact
+                        );
+
+                        session.completeShippingContactSelection(
+                            ApplePaySession.STATUS_SUCCESS,
+                            shippingMethods,
+                            sheetTotal.total,
+                            sheetTotal.breakdown
+                        );
+                    } catch (error) {
+                        console.error('[Checkout.com Apple Pay] onshippingcontactselected failed', error);
+                        const fallback = this.getFallbackSheetTotal();
+                        session.completeShippingContactSelection(
+                            ApplePaySession.STATUS_FAILURE,
+                            [],
+                            fallback.total,
+                            fallback.breakdown
+                        );
+                    }
+                };
+
+                session.onshippingmethodselected = async (event) => {
+                    try {
+                        const match = this.availableShippingMethods.find(
+                            (method) => method.method_code === event.shippingMethod.identifier
+                        );
+
+                        if (match) {
+                            this.selectedShippingMethod = match;
+                        }
+
+                        const sheetTotal = await this.computeSheetTotal(
+                            this.selectedShippingMethod,
+                            this.shippingAddress
+                        );
+
+                        session.completeShippingMethodSelection(
+                            ApplePaySession.STATUS_SUCCESS,
+                            sheetTotal.total,
+                            sheetTotal.breakdown
+                        );
+                    } catch (error) {
+                        console.error('[Checkout.com Apple Pay] onshippingmethodselected failed', error);
+                        const fallback = this.getFallbackSheetTotal();
+                        session.completeShippingMethodSelection(
+                            ApplePaySession.STATUS_FAILURE,
+                            fallback.total,
+                            fallback.breakdown
+                        );
+                    }
+                };
+
+                session.onpaymentauthorized = (event) => {
+                    this.persistAddressesAndPlaceOrder(event.payment)
+                        .then((result) => {
+                            if (result && result.success) {
+                                session.completePayment(ApplePaySession.STATUS_SUCCESS);
+                                window.location.href = result.url || this.successUrl || '/checkout/onepage/success';
+                            } else {
+                                session.completePayment(ApplePaySession.STATUS_FAILURE);
+                                this.processing = false;
+                                this.notifyUserError(this.messages.paymentFailed);
+                            }
+                        })
+                        .catch((error) => {
+                            console.error('[Checkout.com Apple Pay] place order failed', error);
+                            session.completePayment(ApplePaySession.STATUS_FAILURE);
+                            this.processing = false;
+                            this.notifyUserError(this.messages.paymentFailed);
+                        });
+                };
+
+                session.oncancel = () => {
+                    this.processing = false;
+                };
+            },
+
+
+            /**
+             * Call the Checkout.com merchant-validation endpoint and return the opaque merchant session.
+             *
+             * @param {string} applePayValidationUrl  Validation URL provided by Apple Pay in the onvalidatemerchant event.
+             * @return {Promise<object|null>}  Merchant session object, or null on failure.
+             */
+            performMerchantValidation(applePayValidationUrl) {
+                const url = this.validationUrl
+                    + '?u=' + encodeURIComponent(applePayValidationUrl)
+                    + '&method_id=' + encodeURIComponent(this.methodId);
+
+                return fetch(url, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                })
+                    .then((response) => response.ok ? response.json() : null)
+                    .catch((error) => {
+                        console.error('[Checkout.com Apple Pay] merchant validation failed', error);
+                        return null;
+                    });
+            },
+
+            /**
+             * Fetch available shipping methods for the given shipping contact and populate availableShippingMethods.
+             *
+             * @param {object} shippingContact  Apple Pay shipping contact with countryCode and postalCode.
+             * @return {Promise<Array>}  Array of Apple Pay shipping method descriptors, or empty array on failure.
+             */
+            refreshShippingMethods(shippingContact) {
+                this.availableShippingMethods = [];
+                this.selectedShippingMethod = null;
+
+                const body = {
+                    address: {
+                        country_id: (shippingContact.countryCode || '').toUpperCase(),
+                        postcode: shippingContact.postalCode || '',
+                    },
+                };
+
+                return magentoRestCall(this.restBaseUrl, 'estimate-shipping-methods', body, 'POST', this.getRestRoute())
+                    .then((methods) => {
+                        if (!Array.isArray(methods) || !methods.length) {
+                            return [];
+                        }
+
+                        this.availableShippingMethods = methods.filter((method) => method.available);
+
+                        return this.availableShippingMethods.map((method) => ({
+                            label: method.method_title || method.carrier_title || method.method_code,
+                            amount: Number(method.price_incl_tax || method.amount || 0).toFixed(2),
+                            identifier: method.method_code,
+                            detail: method.carrier_title || '',
+                        }));
+                    })
+                    .catch((error) => {
+                        console.error('[Checkout.com Apple Pay] estimate-shipping-methods failed', error);
+                        return [];
+                    });
+            },
+
+            /**
+             * Build a minimal sheet total using only the cart subtotal, used as a fallback when totals fetch fails.
+             *
+             * @return {{total: object, breakdown: Array}}  Fallback Apple Pay line-item sheet.
+             */
+            getFallbackSheetTotal() {
+                return {
+                    total: {
+                        type: 'final',
+                        label: window.location.host,
+                        amount: this.getCartTotal(),
+                    },
+                    breakdown: [],
+                };
+            },
+
+            /**
+             * Compute the Apple Pay sheet total and line-item breakdown for the selected shipping method and contact.
+             *
+             * @param {object|null} shippingMethod   Currently selected Magento shipping method, or null.
+             * @param {object|null} shippingContact  Apple Pay shipping contact, or null.
+             * @return {Promise<{total: object, breakdown: Array}>}  Sheet total with optional line-item breakdown.
+             */
+            async computeSheetTotal(shippingMethod, shippingContact) {
+                if (shippingMethod && shippingContact) {
+                    const exact = await this.fetchTotalsForSelection(shippingContact, shippingMethod);
+
+                    if (exact && exact.grandTotal !== null) {
+                        return {
+                            total: {
+                                type: 'final',
+                                label: window.location.host,
+                                amount: exact.grandTotal,
+                            },
+                            breakdown: exact.breakdown,
+                        };
+                    }
+                }
+
+                const subtotal = Number(this.getCartTotal());
+                const shippingAmount = shippingMethod
+                    ? (Number(shippingMethod.price_incl_tax) || Number(shippingMethod.amount) || 0)
+                    : 0;
+
+                return {
+                    total: {
+                        type: 'final',
+                        label: window.location.host,
+                        amount: (subtotal + shippingAmount).toFixed(2),
+                    },
+                    breakdown: [],
+                };
+            },
+
+            /**
+             * Call the Magento totals-information endpoint to get the exact grand total and line-item breakdown.
+             *
+             * @param {object} shippingContact  Apple Pay shipping contact with countryCode and postalCode.
+             * @param {object} shippingMethod   Magento shipping method with carrier_code and method_code.
+             * @return {Promise<{grandTotal: string, breakdown: Array}|null>}  Totals data, or null on failure.
+             */
+            fetchTotalsForSelection(shippingContact, shippingMethod) {
+                const body = {
+                    addressInformation: {
+                        address: {
+                            country_id: (shippingContact.countryCode || '').toUpperCase(),
+                            postcode: shippingContact.postalCode || '',
+                            region_id: 0,
+                        },
+                        shipping_carrier_code: shippingMethod.carrier_code,
+                        shipping_method_code: shippingMethod.method_code,
+                    },
+                };
+
+                return magentoRestCall(this.restBaseUrl, 'totals-information', body, 'POST', this.getRestRoute())
+                    .then((response) => {
+                        if (!response || !Array.isArray(response.total_segments)) {
+                            return null;
+                        }
+
+                        let grandTotal = null;
+                        const breakdown = [];
+
+                        for (const segment of response.total_segments) {
+                            if (segment.code === 'grand_total') {
+                                grandTotal = Number(segment.value || 0).toFixed(2);
+                                continue;
+                            }
+
+                            if (segment.value === null) {
+                                continue;
+                            }
+
+                            if (segment.code === 'tax' && Number(segment.value) === 0) {
+                                continue;
+                            }
+
+                            breakdown.push({
+                                type: 'final',
+                                label: segment.title,
+                                amount: Number(segment.value).toFixed(2),
+                            });
+                        }
+
+                        return { grandTotal, breakdown };
+                    });
+            },
+
+            /**
+             * Persist the Apple Pay shipping and billing addresses to the quote, then place the order.
+             *
+             * @param {object} payment  Apple Pay payment object containing shippingContact, billingContact, and token.
+             * @return {Promise<{success: boolean, url?: string}|null>}  Place-order result, or null on failure.
+             */
+            persistAddressesAndPlaceOrder(payment) {
+                const shippingDetails = payment.shippingContact || {};
+                const billingDetails = payment.billingContact || {};
+
+                return this.persistShippingInformation(shippingDetails, billingDetails)
+                    .then(() => this.placeOrder(payment.token, billingDetails));
+            },
+
+            /**
+             * Push shipping + billing to the quote's shipping-information endpoint
+             * (carts/mine for logged-in customers, guest-carts/{maskedId} for guests).
+             * Skip resolves to null when there is nothing to push (no shipping method,
+             * e.g. guest fallback or virtual cart) — placeOrder will rely on the
+             * addresses already attached to the quote in that case.
+             * Any attempted POST that comes back null is treated as a hard failure
+             * so the order is NOT placed without the customer's Apple Pay address.
+             */
+            persistShippingInformation(shippingDetails, billingDetails) {
+                if (!this.selectedShippingMethod) {
+                    return Promise.resolve(null);
+                }
+
+                const body = {
+                    addressInformation: {
+                        shipping_address: this.toMagentoAddress(shippingDetails, true),
+                        billing_address: this.toMagentoAddress(billingDetails, false, shippingDetails),
+                        shipping_carrier_code: this.selectedShippingMethod.carrier_code,
+                        shipping_method_code: this.selectedShippingMethod.method_code,
+                    },
+                };
+
+                return magentoRestCall(this.restBaseUrl, 'shipping-information', body, 'POST', this.getRestRoute())
+                    .then((response) => {
+                        if (response === null) {
+                            throw new Error('Failed to push Apple Pay shipping address to the quote');
+                        }
+
+                        return response;
+                    });
+            },
+
+            /**
+             * Convert an Apple Pay contact object into a Magento address payload.
+             *
+             * @param {object} applePayAddress   Apple Pay contact (shippingContact or billingContact).
+             * @param {boolean} isShipping       True when converting the shipping address.
+             * @param {object} [shippingFallback]  Shipping contact used as fallback for email and phone on billing addresses.
+             * @return {object}  Magento REST address object.
+             */
+            toMagentoAddress(applePayAddress, isShipping, shippingFallback) {
+                const fallback = shippingFallback || {};
+
+                return {
+                    country_id: (applePayAddress.countryCode || '').toUpperCase(),
+                    region: applePayAddress.administrativeArea || '',
+                    region_id: 0,
+                    street: applePayAddress.addressLines || [],
+                    postcode: applePayAddress.postalCode || '',
+                    city: applePayAddress.locality || '',
+                    firstname: applePayAddress.givenName || '',
+                    lastname: applePayAddress.familyName || '',
+                    email: applePayAddress.emailAddress || fallback.emailAddress || '',
+                    telephone: applePayAddress.phoneNumber || fallback.phoneNumber || '',
+                    save_in_address_book: 0,
+                };
+            },
+
+            /**
+             * Submit the order to the Checkout.com place-order endpoint with the Apple Pay token.
+             *
+             * @param {string|object} applePayToken  Apple Pay payment token (string or nested object).
+             * @param {object} billingDetails        Apple Pay billing contact for card-holder name.
+             * @return {Promise<{success: boolean, url?: string}|null>}  Server response, or null on HTTP failure.
+             */
+            placeOrder(applePayToken, billingDetails) {
+                const formData = new URLSearchParams();
+                formData.append('form_key', hyva.getFormKey());
+                formData.append('methodId', this.methodId);
+                formData.append('source', this.methodId);
+
+                /**
+                 * Recursively append a possibly-nested value to a URLSearchParams instance using bracket notation.
+                 *
+                 * @param {URLSearchParams} fd  The form-data object to populate.
+                 * @param {string} key          Parameter name (may include brackets for nesting).
+                 * @param {*} value             Value to append; objects are expanded recursively.
+                 */
+                const appendNested = (fd, key, value) => {
+                    if (value === null || typeof value === 'undefined') {
+                        fd.append(key, '');
+                    } else if (typeof value === 'object') {
+                        Object.keys(value).forEach((k) => appendNested(fd, key + '[' + k + ']', value[k]));
+                    } else {
+                        fd.append(key, value);
+                    }
+                };
+
+                if (typeof applePayToken === 'string') {
+                    formData.append('cardToken', applePayToken);
+                } else {
+                    appendNested(formData, 'cardToken', applePayToken);
+                }
+                formData.append('cardBin', '');
+
+                if (billingDetails && billingDetails.givenName) {
+                    formData.append('cardHolder', `${billingDetails.givenName} ${billingDetails.familyName || ''}`.trim());
+                }
+
+                return fetch(this.placeOrderUrl, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData.toString(),
+                }).then((response) => response.ok ? response.json() : null);
+            },
+
+            /**
+             * Display an error message to the user via Hyvä's dispatchMessages or a native alert fallback.
+             *
+             * @param {string} message  Error message text to display.
+             */
+            notifyUserError(message) {
+                const text = message || this.messages.paymentFailed;
+
+                if (typeof window.dispatchMessages === 'function') {
+                    window.dispatchMessages([{ type: 'error', text }]);
+                    return;
+                }
+
+                window.alert(text);
+            },
+        };
+    }
+
+    window.addEventListener('alpine:init', () => {
+        log('alpine:init — registering initApplePayButton factory');
+        Alpine.data('initApplePayButton', initApplePayButton);
+    }, { once: true });
+})();
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>

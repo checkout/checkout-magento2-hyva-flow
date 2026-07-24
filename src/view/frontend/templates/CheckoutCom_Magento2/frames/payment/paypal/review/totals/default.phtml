@@ -1,0 +1,43 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use Magento\Checkout\Block\Total\DefaultTotal;
+use Magento\Checkout\Helper\Data as CheckoutHelper;
+use Magento\Framework\Escaper;
+
+/** @var DefaultTotal $block */
+/** @var Escaper $escaper */
+
+$colspan = (int) $block->getColspan();
+/** @var CheckoutHelper $checkoutHelper */
+$checkoutHelper = $block->getData('checkoutHelper');
+$isFooter = $block->getRenderingArea() == $block->getTotal()->getArea();
+$markCellClass = $isFooter
+    ? 'py-3 pe-4 text-left font-semibold text-fg align-top'
+    : 'py-2 pe-4 text-left font-normal text-fg-secondary align-top';
+$amountCellClass = $isFooter
+    ? 'py-3 text-right text-lg font-semibold align-top'
+    : 'py-2 text-right font-medium align-top';
+$rowClass = $isFooter ? 'border-t border-slate-200' : 'border-t border-slate-100';
+?>
+<tr class="<?= $escaper->escapeHtmlAttr($rowClass) ?>">
+    <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">
+        <?= $escaper->escapeHtml($block->getTotal()->getTitle()) ?>
+    </th>
+    <td class="<?= $escaper->escapeHtmlAttr($amountCellClass) ?>" data-th="<?= $escaper->escapeHtmlAttr($block->getTotal()->getTitle()) ?>">
+        <?= /* @noEscape */ $checkoutHelper->formatPrice($block->getTotal()->getValue()) ?>
+    </td>
+</tr>

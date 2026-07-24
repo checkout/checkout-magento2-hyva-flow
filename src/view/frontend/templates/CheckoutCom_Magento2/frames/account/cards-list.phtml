@@ -1,0 +1,94 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2\Block\Account\CardRenderer;
+use Hyva\Theme\ViewModel\Modal;
+use Magento\Framework\Escaper;
+use Magento\Vault\Api\Data\PaymentTokenInterface;
+
+/** @var CardRenderer $block */
+/** @var Escaper $escaper */
+/** @var \Hyva\Theme\Model\ViewModelRegistry $viewModels */
+
+$modalViewModel = $viewModels->require(Modal::class);
+
+$ccNumberView = $escaper->escapeHtml($block->getNumberLast4Digits());
+
+$parentBlock = $block->getParentBlock();
+if ($parentBlock) {
+    $i = ((int) ($parentBlock->getData('cards_row_number') ?? 0)) + 1;
+    $parentBlock->setData('cards_row_number', $i);
+} else {
+    $i = 1;
+}
+
+$rowBgClass = $i % 2 === 0 ? '' : 'bg-gray-100';
+$cellClass = $escaper->escapeHtmlAttr(trim('p-2 flex items-center ' . $rowBgClass));
+$cellDesktopOnlyClass = $escaper->escapeHtmlAttr(trim('p-2 items-center hidden lg:flex ' . $rowBgClass));
+?>
+<div class="<?= $cellClass ?>">
+    <div class="text-sm">
+        <span class="hidden lg:inline"><?= $escaper->escapeHtml(__('ending')) ?></span>
+        <?= $escaper->escapeHtml($ccNumberView) ?>
+    </div>
+</div>
+<div class="<?= $cellClass ?>">
+    <div class="text-sm"><?= $escaper->escapeHtml($block->getExpDate()) ?></div>
+</div>
+<div class="<?= $cellDesktopOnlyClass ?>">
+    <div class="text-sm">
+        <img
+            src="<?= $escaper->escapeUrl($block->getIconUrl()) ?>"
+            width="<?= (int) $block->getIconWidth() ?>"
+            height="<?= (int) $block->getIconHeight() ?>"
+            alt="<?= $escaper->escapeHtmlAttr($block->getCardType()) ?>"
+        >
+    </div>
+</div>
+<div
+    class="<?= $cellClass ?>"
+    x-data="hyva.modal()"
+>
+    <div class="text-sm">
+        <form
+            class="form"
+            action="<?= $escaper->escapeUrl($block->getUrl('vault/cards/deleteaction')) ?>"
+            method="post"
+            x-ref="form"
+        >
+            <?= $block->getBlockHtml('formkey') ?>
+            <input
+                type="hidden"
+                name="<?= $escaper->escapeHtmlAttr(PaymentTokenInterface::PUBLIC_HASH) ?>"
+                value="<?= $escaper->escapeHtmlAttr($block->getToken()->getPublicHash()) ?>"
+            />
+            <?php
+                $message = $escaper->escapeHtml(
+                    __('Are you sure you want to delete the card ending with %1?', $ccNumberView)
+                );
+                $confirmation = $modalViewModel->confirm($message);
+            ?>
+            <button
+                type="button"
+                class="action delete text-red-500"
+                @click="<?= /** @noEscape */ $confirmation->getShowJs() ?>.then(ok => ok && $refs.form.submit())"
+            >
+                <?= $escaper->escapeHtml(__('Delete a card')) ?>
+            </button>
+            <?= /** @noEscape */ $confirmation ?>
+        </form>
+    </div>
+</div>

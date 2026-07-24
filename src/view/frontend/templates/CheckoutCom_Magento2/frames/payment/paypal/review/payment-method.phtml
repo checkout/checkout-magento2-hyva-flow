@@ -1,0 +1,29 @@
+<?php
+/**
+ * Checkout.com Magento 2 Magento2 Payment.
+ *
+ * PHP version 8
+ *
+ * @category  Checkout.com
+ * @package   Magento2
+ * @author    Checkout.com Development Team <integration@checkout.com>
+ * @copyright 2010-present Checkout.com all rights reserved
+ * @license   https://opensource.org/licenses/mit-license.html MIT License
+ * @link      https://www.checkout.com
+ */
+
+declare(strict_types=1);
+
+use CheckoutCom\Magento2\Block\Paypal\Review\PaymentMethod;
+use Magento\Framework\Escaper;
+
+/** @var PaymentMethod $block */
+/** @var Escaper $escaper */
+?>
+<section class="card p-6 border border-slate-200 rounded-lg" aria-labelledby="checkoutcom-paypal-payment-title">
+    <h2 id="checkoutcom-paypal-payment-title" class="text-lg font-semibold mb-4">
+        <?= $escaper->escapeHtml(__('Payment Method')) ?>
+    </h2>
+    <p class="font-medium"><?= $escaper->escapeHtml($block->getPaymentMethod()) ?></p>
+    <p class="text-fg-secondary mt-1"><?= $escaper->escapeHtml($block->getEmail()) ?></p>
+</section>
