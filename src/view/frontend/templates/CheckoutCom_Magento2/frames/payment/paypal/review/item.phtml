@@ -45,7 +45,7 @@ $qty = $block->getQty();
                     </span>
                 <?php endif; ?>
                 <div class="min-w-0">
-                    <p class="font-semibold text-fg">
+                    <p class="font-semibold text-ink">
                         <?php if ($block->hasProductUrl()): ?>
                             <a href="<?= $escaper->escapeUrl($block->getProductUrl()) ?>">
                                 <?= $escaper->escapeHtml($block->getProductName()) ?>
@@ -59,7 +59,7 @@ $qty = $block->getQty();
                             <?php foreach ($options as $option): ?>
                                 <?php $formatedOptionValue = $block->getFormatedOptionValue($option) ?>
                                 <div class="table-row">
-                                    <dt class="table-cell font-normal min-w-16 pe-2 pb-1 text-fg-secondary">
+                                    <dt class="table-cell font-normal min-w-16 pe-2 pb-1 text-ink-muted">
                                         <?= $escaper->escapeHtml($option['label']) ?>
                                     </dt>
                                     <dd class="table-cell font-medium pb-1">
@@ -80,7 +80,7 @@ $qty = $block->getQty();
                 </div>
             </div>
         </td>
-        <td class="py-4 pe-4 text-fg-secondary whitespace-nowrap" data-th="<?= $escaper->escapeHtmlAttr(__('Price')) ?>">
+        <td class="py-4 pe-4 text-ink-muted whitespace-nowrap" data-th="<?= $escaper->escapeHtmlAttr(__('Price')) ?>">
             <?= /* @noEscape */ $block->getUnitPriceHtml($item) ?>
         </td>
         <td class="py-4 pe-4 whitespace-nowrap" data-th="<?= $escaper->escapeHtmlAttr(__('Qty')) ?>">

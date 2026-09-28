@@ -8,6 +8,30 @@
 @source "../templates/**/*.phtml";
 @source "../layout/**/*.xml";
 
+/**
+ * Design tokens `ink` / `ink-muted`, introduced by Hyvä Theme 1.5.2 as the
+ * clearer-named replacement for `fg` / `fg-secondary`.
+ *
+ * The utilities are declared here instead of the tokens, on purpose: this module
+ * never redefines a theme token, so the outcome does not depend on where the
+ * theme imports this file, nor on which rule Tailwind keeps when the theme also
+ * generates one from its own token. Both forms resolve to the same colour, since
+ * the fallback chain is only read when `--color-ink` is missing: the theme value
+ * wins on 1.5.x, and on 1.4.x the chain falls back to `fg` / `fg-secondary`,
+ * then to the Hyvä default values.
+ *
+ * Only the `text-*` utilities are declared, the only ones this module uses. A
+ * `bg-ink` or `border-ink` would need its own `@utility` here, since no `ink`
+ * token is registered.
+ */
+@utility text-ink {
+    color: var(--color-ink, var(--color-fg, var(--color-slate-950)));
+}
+
+@utility text-ink-muted {
+    color: var(--color-ink-muted, var(--color-fg-secondary, var(--color-slate-600)));
+}
+
 @layer components {
     .checkoutcom-paypal-express__container {
         border-radius: var(--radius-lg);

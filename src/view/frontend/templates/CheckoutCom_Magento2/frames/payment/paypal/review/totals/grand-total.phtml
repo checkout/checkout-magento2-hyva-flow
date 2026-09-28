@@ -24,7 +24,7 @@ use Magento\Tax\Block\Checkout\Grandtotal;
 $colspan = (int) $block->getColspan();
 /** @var CheckoutHelper $checkoutHelper */
 $checkoutHelper = $block->getData('checkoutHelper');
-$markCellClass = 'py-3 pe-4 text-left font-semibold text-fg align-top';
+$markCellClass = 'py-3 pe-4 text-left font-semibold text-ink align-top';
 $amountCellClass = 'py-3 text-right text-lg font-semibold align-top';
 ?>
 <?php if ($block->includeTax() && $block->getTotalExclTax() >= 0): ?>
