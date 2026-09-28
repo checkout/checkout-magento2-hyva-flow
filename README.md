@@ -25,7 +25,7 @@ In order to work, this module requires:
 |-----------------------------------------|--------------------------|
 | PHP                                     | 8.1 / 8.2 / 8.3 / 8.4    |
 | `magento/framework`                     | `>=103.0.5`              |
-| `hyva-themes/magento2-default-theme`    | `^1.4.0 <1.5.0`          |
+| `hyva-themes/magento2-default-theme`    | `>=1.4.0 <1.6.0`         |
 | `checkoutcom/magento2`                  | `*`                      |
 
 Please refer to https://docs.hyva.io for more instructions about Hyvä prerequisites.
