@@ -28,9 +28,9 @@ $colspan = (int) $block->getColspan();
 $taxHelper = $block->getData('taxHelper');
 /** @var CheckoutHelper $checkoutHelper */
 $checkoutHelper = $block->getData('checkoutHelper');
-$markCellClass = 'py-2 pe-4 text-left font-normal text-fg-secondary align-top';
+$markCellClass = 'py-2 pe-4 text-left font-normal text-ink-muted align-top';
 $amountCellClass = 'py-2 text-right font-medium align-top';
-$detailMarkClass = 'py-1 pe-4 ps-4 text-left text-sm text-fg-secondary align-top';
+$detailMarkClass = 'py-1 pe-4 ps-4 text-left text-sm text-ink-muted align-top';
 ?>
 <tr class="border-t border-slate-100">
     <th class="<?= $escaper->escapeHtmlAttr($markCellClass) ?>" colspan="<?= $colspan ?>" scope="row">

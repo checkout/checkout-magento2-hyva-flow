@@ -26,7 +26,7 @@ use Magento\Framework\Escaper;
     <?= /* @noEscape */ $block->renderTotals('footer', $colspan) ?>
     <?php if ($block->needDisplayBaseGrandtotal()): ?>
         <tr class="border-t border-slate-200">
-            <th class="py-2 pe-4 text-left font-medium text-fg-secondary" colspan="<?= (int) $colspan ?>" scope="row">
+            <th class="py-2 pe-4 text-left font-medium text-ink-muted" colspan="<?= (int) $colspan ?>" scope="row">
                 <?= $escaper->escapeHtml(__('Your credit card will be charged for')) ?>
             </th>
             <td class="py-2 text-right font-semibold" data-th="<?= $escaper->escapeHtmlAttr(__('Your credit card will be charged for')) ?>">
